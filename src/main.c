@@ -2,6 +2,7 @@
 #include <SDL.h>
 #include <SDL_image.h>
 #include <stdbool.h>
+#include "tank.h"
 
 #define WINDOW_WIDTH 800
 #define WINDOW_HEIGHT 600
