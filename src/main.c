@@ -3,6 +3,7 @@
 #include <SDL_image.h>
 #include <stdbool.h>
 #include "tank.h"
+#include "timer.h"
 
 #define WINDOW_WIDTH 800
 #define WINDOW_HEIGHT 600
