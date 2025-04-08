@@ -21,14 +21,11 @@ void run(Game* game);                       // Hanterar själva spelet
 void close(Game* game);                     // Hanterar stängning och uppstädning av SDL miljön
 
 
-int main(int argv, char** args)
-{
+int main(int argv, char** args){
     Game game;
-
     initiate(&game);
     run(&game);
     close(&game);
-    
 }
 
 void initiate(Game *game)
@@ -44,7 +41,7 @@ void initiate(Game *game)
         return;
     }
 
-    game->pWindow = SDL_CreateWindow("Tankspel", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+    game->pWindow = SDL_CreateWindow("Ricochet Tanks", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                                      WINDOW_WIDTH, WINDOW_HEIGHT, SDL_WINDOW_SHOWN);
     if (!game->pWindow) 
     {
