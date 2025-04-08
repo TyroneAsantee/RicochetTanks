@@ -28,8 +28,8 @@ int main(int argv, char** args){
     close(&game);
 }
 
-void initiate(Game *game)
-{
+void initiate(Game *game){
+
      if (SDL_Init(SDL_INIT_VIDEO) != 0) {
         printf("SDL Init Error: %s\n", SDL_GetError());
         return;
@@ -41,8 +41,7 @@ void initiate(Game *game)
         return;
     }
 
-    game->pWindow = SDL_CreateWindow("Ricochet Tanks", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-                                     WINDOW_WIDTH, WINDOW_HEIGHT, SDL_WINDOW_SHOWN);
+    game->pWindow = SDL_CreateWindow("Ricochet Tanks", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, WINDOW_WIDTH, WINDOW_HEIGHT, SDL_WINDOW_SHOWN);
     if (!game->pWindow) 
     {
         printf("Window error: %s\n", SDL_GetError());
@@ -61,10 +60,11 @@ void initiate(Game *game)
     
     // Ladda bilden (men visa inte)
     initTank(game->pRenderer);
-    game->tank.x = 300;
-    game->tank.y = 300;
     game->tank.w = 100;
     game->tank.h = 100;
+    game->tank.x = (WINDOW_WIDTH - game->tank.w) / 2;
+    game->tank.y = (WINDOW_HEIGHT - game->tank.h) / 2 - 10;
+
 
     SDL_Surface *pBgSurface = IMG_Load("resources/background.png");
     if(!pBgSurface)
@@ -83,19 +83,19 @@ void initiate(Game *game)
 
     SDL_RenderClear(game->pRenderer);
     SDL_RenderCopy(game->pRenderer, game->pBackground, NULL, NULL);
-    drawTank(game->pRenderer);                          //från tank.c
+    drawTank(game->pRenderer, &game->tank);  //från tank.c
     SDL_RenderPresent(game->pRenderer);    
 }
 
-void run(Game *game)                                    //TESTKOD FÖR ATT SE OM ALLT FUNKAR
-{
+void run(Game *game){                                //TESTKOD FÖR ATT SE OM ALLT FUNKAR
+
     int running = 1;
     SDL_Event event;
 
-    while (running) 
-    {
-        while (SDL_PollEvent(&event)) 
-        {
+    while (running){
+    
+        while (SDL_PollEvent(&event)){
+        
             if (event.type == SDL_QUIT || 
                (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE)) {
                 running = 0;
@@ -104,7 +104,7 @@ void run(Game *game)                                    //TESTKOD FÖR ATT SE OM
 
         SDL_RenderClear(game->pRenderer);
         SDL_RenderCopy(game->pRenderer, game->pBackground, NULL, NULL);
-        drawTank(game->pRenderer);  // Från tank.c
+        drawTank(game->pRenderer, &game->tank);  // Från tank.c
         SDL_RenderPresent(game->pRenderer);
         SDL_Delay(16); // ~60 FPS
     }
