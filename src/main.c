@@ -16,9 +16,9 @@ struct game
 };
 typedef struct game Game;
 
-void initiate(Game* game);
-void run(Game* game);
-void close(Game* game);
+void initiate(Game* game);                  // Initiera SDL miljö och fönster
+void run(Game* game);                       // Hanterar själva spelet
+void close(Game* game);                     // Hanterar stängning och uppstädning av SDL miljön
 
 
 int main(int argv, char** args)
@@ -117,7 +117,6 @@ void run(Game *game)                                    //TESTKOD FÖR ATT SE OM
 
 void close(Game *game)
 {
-    // Destroy direkt efter laddning om inget mer ska göras nu
     destroyTank();
     SDL_DestroyRenderer(game->pRenderer);
     SDL_DestroyWindow(game->pWindow);
