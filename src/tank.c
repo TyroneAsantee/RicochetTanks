@@ -6,7 +6,7 @@
 static SDL_Texture* tankTexture = NULL;
 
 void initTank(SDL_Renderer* renderer) {
-    tankTexture = IMG_LoadTexture(renderer, "tank.png");
+    tankTexture = IMG_LoadTexture(renderer, "resources/tank.png");
     if (!tankTexture) {
         SDL_Log("Kunde inte ladda tank.png: %s", IMG_GetError());
     }
