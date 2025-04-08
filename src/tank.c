@@ -12,12 +12,12 @@ void initTank(SDL_Renderer* renderer) {
     }
 }
 
-void drawTank(SDL_Renderer* renderer) {
+void drawTank(SDL_Renderer* renderer, SDL_Rect* dst) {
     if (!tankTexture) return;
 
-    SDL_Rect dst = { 300, 300, 100, 100 }; // position + storlek
-    SDL_RenderCopy(renderer, tankTexture, NULL, &dst);
+    SDL_RenderCopy(renderer, tankTexture, NULL, dst);
 }
+
 
 void destroyTank() {
     if (tankTexture) {
