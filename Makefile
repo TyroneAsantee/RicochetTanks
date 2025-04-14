@@ -1,15 +1,14 @@
-CC = gcc
-CFLAGS = -Wall -Wextra -Iinclude -IC:/msys64/mingw64/include/SDL2
-LDFLAGS = -lmingw32 -lSDL2main -lSDL2 -lSDL2_image
+CC = clang
+CFLAGS = -Wall -Wextra -std=c11 -I/opt/homebrew/include/SDL2 -Isrc
+LDFLAGS = -L/opt/homebrew/lib -lSDL2 -lSDL2_image
 
 SRC = $(wildcard src/*.c)
-OBJ = $(SRC:src/%.c=src/%.o)
-TARGET = spel.exe
+OUT = main
 
-all: $(TARGET)
+all: $(OUT)
 
-$(TARGET): $(OBJ)
-	$(CC) -o $@ $^ $(LDFLAGS)
+$(OUT): $(SRC)
+	$(CC) $(CFLAGS) $(SRC) -o $(OUT) $(LDFLAGS)
 
 clean:
-	del /Q $(OBJ) $(TARGET)
+	rm -f $(OUT)
