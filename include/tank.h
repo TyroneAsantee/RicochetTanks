@@ -1,7 +1,7 @@
 #ifndef TANK_H
 #define TANK_H
 
-#include <SDL.h>
+#include <SDL2/SDL.h>
 #include <stdbool.h>
 #include <math.h>
 

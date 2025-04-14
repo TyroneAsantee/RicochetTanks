@@ -1,14 +1,27 @@
-CC = gcc
-CFLAGS = -Wall -Wextra -Iinclude -I/usr/local/include/SDL2 -D_THREAD_SAFE
-LDFLAGS = -L/usr/local/lib -lSDL2 -lSDL2_image
+CC = clang
+
+# Inkluderar alla relevanta header paths
+INCLUDES = -I/opt/homebrew/include/SDL2 -Isrc -Iinclude
+
+# Kompilatorflaggor
+CFLAGS = -Wall -Wextra -std=c11 $(INCLUDES)
+
+# Länkningsflaggor för SDL2 och SDL2_image
+LDFLAGS = -L/opt/homebrew/lib -lSDL2 -lSDL2_image
+
+# Alla .c-filer i src-mappen
 SRC = $(wildcard src/*.c)
-OBJ = $(SRC:.c=.o)
-TARGET = spel
 
-all: $(TARGET)
+# Utdatafil
+OUT = main
 
-$(TARGET): $(OBJ)
-	$(CC) -o $@ $^ $(LDFLAGS)
+# Standardmål
+all: $(OUT)
 
+# Kompilera och länka allt i ett steg
+$(OUT): $(SRC)
+	$(CC) $(CFLAGS) $(SRC) -o $(OUT) $(LDFLAGS)
+
+# Rensar binären
 clean:
-	rm -f $(OBJ) $(TARGET)
+	rm -f $(OUT)
