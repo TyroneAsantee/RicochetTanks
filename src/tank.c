@@ -1,7 +1,12 @@
 #include <SDL.h>
 #include <SDL_image.h>
+#include <stdbool.h>
+#include <math.h>
 #include "tank.h"
 #include "timer.h"
+#define SPEED 100
+#define WINDOW_WIDTH 600
+#define WINDOW_HEIGHT 400
 
 static SDL_Texture* tankTexture = NULL;
 
@@ -17,7 +22,6 @@ void drawTank(SDL_Renderer* renderer, SDL_Rect* dst) {
 
     SDL_RenderCopy(renderer, tankTexture, NULL, dst);
 }
-
 
 void destroyTank() {
     if (tankTexture) {

@@ -1,34 +1,21 @@
 #include <stdio.h>
 #include <SDL.h>
 #include <SDL_image.h>
-<<<<<<< HEAD
 #include "tank.h"
 #include "timer.h"
-=======
-#include <stdbool.h>
-#include <math.h>
-#include "tank.h"
-#include "timer.h"
-#define SPEED 100
->>>>>>> 5956118 (Tillag av tankens rorelse)
 #define WINDOW_WIDTH 800
 #define WINDOW_HEIGHT 600
-
+#define SPEED 100
 struct game
 {
     SDL_Window *pWindow;
     SDL_Renderer *pRenderer;
     SDL_Texture *pBackground;
-<<<<<<< HEAD
-    SDL_Rect tank;
-    Timer timer;
-=======
     SDL_Texture *pTankpicture;
     SDL_Rect shipRect;
     SDL_Event event;
     Timer timer;
     float angle;
->>>>>>> 5956118 (Tillag av tankens rorelse)
 };
 typedef struct game Game;
 
@@ -37,11 +24,7 @@ void run(Game* game);                       // Hanterar själva spelet
 void close(Game* game);                     // Hanterar stängning och uppstädning av SDL miljön
 
 
-<<<<<<< HEAD
-int main(int argv, char** args){
-=======
 int main(void){
->>>>>>> 5956118 (Tillag av tankens rorelse)
     Game game;
     initiate(&game);
     run(&game);
@@ -80,17 +63,10 @@ void initiate(Game *game){
     
     // Ladda bilden (men visa inte)
     initTank(game->pRenderer);
-<<<<<<< HEAD
-    game->tank.w = 100;
-    game->tank.h = 100;
-    game->tank.x = (WINDOW_WIDTH - game->tank.w) / 2;
-    game->tank.y = (WINDOW_HEIGHT - game->tank.h) / 2 - 10;
-=======
     game->shipRect.w = 100;
     game->shipRect.h = 100;
     game->shipRect.x = (WINDOW_WIDTH - game->shipRect.w) / 2;
     game->shipRect.y = (WINDOW_HEIGHT - game->shipRect.h) / 2 - 10;
->>>>>>> 5956118 (Tillag av tankens rorelse)
 
 
     SDL_Surface *pBgSurface = IMG_Load("resources/background.png");
@@ -110,37 +86,11 @@ void initiate(Game *game){
 
     SDL_RenderClear(game->pRenderer);
     SDL_RenderCopy(game->pRenderer, game->pBackground, NULL, NULL);
-<<<<<<< HEAD
-    drawTank(game->pRenderer, &game->tank);  //från tank.c
-=======
     drawTank(game->pRenderer, &game->shipRect);  //från tank.c
->>>>>>> 5956118 (Tillag av tankens rorelse)
     SDL_RenderPresent(game->pRenderer);    
 }
 
 void run(Game *game){                                //TESTKOD FÖR ATT SE OM ALLT FUNKAR
-<<<<<<< HEAD
-
-    int running = 1;
-    SDL_Event event;
-
-    while (running){
-    
-        while (SDL_PollEvent(&event)){
-        
-            if (event.type == SDL_QUIT || 
-               (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE)) {
-                running = 0;
-            }
-        }
-
-        SDL_RenderClear(game->pRenderer);
-        SDL_RenderCopy(game->pRenderer, game->pBackground, NULL, NULL);
-        drawTank(game->pRenderer, &game->tank);  // Från tank.c
-        SDL_RenderPresent(game->pRenderer);
-        SDL_Delay(16); // ~60 FPS
-    }
-=======
     SDL_Surface *pTank = IMG_Load("resources/tank.png");
     if(!pTank)
     {
@@ -156,7 +106,7 @@ void run(Game *game){                                //TESTKOD FÖR ATT SE OM AL
         return;
     }
     SDL_QueryTexture(game->pTankpicture, NULL, NULL, &game->shipRect.w, &game->shipRect.h);
-    game->shipRect.w /= 60;
+    game->shipRect.w /= 64;
     game->shipRect.h /= 64;
 
     float shipX = (WINDOW_WIDTH - game->shipRect.w) / 2;
@@ -180,15 +130,27 @@ void run(Game *game){                                //TESTKOD FÖR ATT SE OM AL
                         case SDL_SCANCODE_W:
                             up = true;
                             break;
+                        case SDL_SCANCODE_UP:
+                            up = true;
+                            break;    
                         case SDL_SCANCODE_S:
                             down = true;
                             break;
+                        case SDL_SCANCODE_DOWN:
+                            down = true;
+                            break;    
                         case SDL_SCANCODE_A:
                             angle -= 10.0f;
                             break;
+                        case SDL_SCANCODE_LEFT:
+                            angle -= 10.0f;
+                            break;    
                         case SDL_SCANCODE_D:
                             angle += 10.0f;
                             break;
+                        case SDL_SCANCODE_RIGHT:
+                            angle += 10.0f;
+                            break;    
                         default:
                             break;
                     }
@@ -242,7 +204,6 @@ void run(Game *game){                                //TESTKOD FÖR ATT SE OM AL
         SDL_Delay(1000 / 60);
     }
 
->>>>>>> 5956118 (Tillag av tankens rorelse)
 }
 
 

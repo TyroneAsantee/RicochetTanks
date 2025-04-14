@@ -2,6 +2,8 @@
 #define TIMER_H
 #include <SDL.h>
 #include <SDL_image.h>
+#include <stdbool.h>
+#include <math.h>
 
 typedef struct {
     Uint32 last_time;
