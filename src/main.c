@@ -106,7 +106,7 @@ void run(Game *game){                                //TESTKOD FÖR ATT SE OM AL
         return;
     }
     SDL_QueryTexture(game->pTankpicture, NULL, NULL, &game->shipRect.w, &game->shipRect.h);
-    game->shipRect.w /= 64;
+    game->shipRect.w /= 60;
     game->shipRect.h /= 64;
 
     float shipX = (WINDOW_WIDTH - game->shipRect.w) / 2;
@@ -143,14 +143,14 @@ void run(Game *game){                                //TESTKOD FÖR ATT SE OM AL
                             angle -= 10.0f;
                             break;
                         case SDL_SCANCODE_LEFT:
-                            angle -= 10.0f;
-                            break;    
+                        angle -= 10.0f;
+                        break;
                         case SDL_SCANCODE_D:
                             angle += 10.0f;
                             break;
                         case SDL_SCANCODE_RIGHT:
-                            angle += 10.0f;
-                            break;    
+                        angle += 10.0f;
+                        break;
                         default:
                             break;
                     }
@@ -160,9 +160,14 @@ void run(Game *game){                                //TESTKOD FÖR ATT SE OM AL
                         case SDL_SCANCODE_W:
                             up = false;
                             break;
+                        case SDL_SCANCODE_UP:
+                        up = false;
+                        break;
                         case SDL_SCANCODE_S:
                             down = false;
                             break;
+                        case SDL_SCANCODE_DOWN:
+                        down = false;
                         default:
                             break;
                     }
