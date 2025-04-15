@@ -63,8 +63,8 @@ void initiate(Game *game){
     
     // Ladda bilden (men visa inte)
     initTank(game->pRenderer);
-    game->shipRect.w = 100;
-    game->shipRect.h = 100;
+    game->shipRect.w = 64;
+    game->shipRect.h = 64;
     game->shipRect.x = (WINDOW_WIDTH - game->shipRect.w) / 2;
     game->shipRect.y = (WINDOW_HEIGHT - game->shipRect.h) / 2 - 10;
 
@@ -106,109 +106,9 @@ void run(Game *game){                                //TESTKOD FÖR ATT SE OM AL
         return;
     }
     SDL_QueryTexture(game->pTankpicture, NULL, NULL, &game->shipRect.w, &game->shipRect.h);
-    game->shipRect.w /= 60;
+    game->shipRect.w /= 64;
     game->shipRect.h /= 64;
-
-    float shipX = (WINDOW_WIDTH - game->shipRect.w) / 2;
-    float shipY = (WINDOW_HEIGHT - game->shipRect.h) / 2;
-    float shipVelocityX = 0;
-    float shipVelocityY = 0;
-    float angle = 0.0f;
-
-    bool closeWindow = false;
-    bool up = false, down = false;
-
-    while (!closeWindow) {
-        SDL_Event event;
-        while (SDL_PollEvent(&event)) {
-            switch (event.type) {
-                case SDL_QUIT:
-                    closeWindow = true;
-                    break;
-                case SDL_KEYDOWN:
-                    switch (event.key.keysym.scancode) {
-                        case SDL_SCANCODE_W:
-                            up = true;
-                            break;
-                        case SDL_SCANCODE_UP:
-                            up = true;
-                            break;    
-                        case SDL_SCANCODE_S:
-                            down = true;
-                            break;
-                        case SDL_SCANCODE_DOWN:
-                            down = true;
-                            break;    
-                        case SDL_SCANCODE_A:
-                            angle -= 10.0f;
-                            break;
-                        case SDL_SCANCODE_LEFT:
-                        angle -= 10.0f;
-                        break;
-                        case SDL_SCANCODE_D:
-                            angle += 10.0f;
-                            break;
-                        case SDL_SCANCODE_RIGHT:
-                        angle += 10.0f;
-                        break;
-                        default:
-                            break;
-                    }
-                    break;
-                case SDL_KEYUP:
-                    switch (event.key.keysym.scancode) {
-                        case SDL_SCANCODE_W:
-                            up = false;
-                            break;
-                        case SDL_SCANCODE_UP:
-                        up = false;
-                        break;
-                        case SDL_SCANCODE_S:
-                            down = false;
-                            break;
-                        case SDL_SCANCODE_DOWN:
-                        down = false;
-                        default:
-                            break;
-                    }
-                    break;
-            }
-        }
-
-        shipVelocityX = 0;
-        shipVelocityY = 0;
-
-        // Räkna ut rörelse baserat på riktning och vinkel — justerat med -90° för att peka uppåt
-        if (up && !down) {
-            float radians = (angle - 90.0f) * M_PI / 180.0f;
-            shipVelocityX = cos(radians) * SPEED;
-            shipVelocityY = sin(radians) * SPEED;
-        }
-        if (down && !up) {
-            float radians = (angle - 90.0f) * M_PI / 180.0f;
-            shipVelocityX = -cos(radians) * SPEED;
-            shipVelocityY = -sin(radians) * SPEED;
-        }
-
-        shipX += shipVelocityX / 60;
-        shipY += shipVelocityY / 60;
-
-        // Håll inom fönstret
-        if (shipX < 0) shipX = 0;
-        if (shipY < 0) shipY = 0;
-        if (shipX > WINDOW_WIDTH - game->shipRect.w) shipX = WINDOW_WIDTH - game->shipRect.w;
-        if (shipY > WINDOW_HEIGHT - game->shipRect.h) shipY = WINDOW_HEIGHT - game->shipRect.h;
-
-        game->shipRect.x = shipX;
-        game->shipRect.y = shipY;
-
-        SDL_RenderClear(game->pRenderer);
-        SDL_RenderCopy(game->pRenderer, game->pBackground, NULL, NULL);
-        SDL_RenderCopyEx(game->pRenderer, game->pTankpicture, NULL, &game->shipRect, angle, NULL, SDL_FLIP_NONE);
-        SDL_RenderPresent(game->pRenderer);
-        SDL_Delay(1000 / 60);
-    }
-
+    tankmovement(game->pTankpicture, game->pBackground, &game->shipRect, game->pRenderer, game->event);
 }
 
 
