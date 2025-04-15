@@ -4,6 +4,7 @@
 #include <math.h>
 #include "tank.h"
 #include "timer.h"
+
 #define SPEED 100
 #define WINDOW_WIDTH 800
 #define WINDOW_HEIGHT 600
@@ -17,17 +18,17 @@ void initTank(SDL_Renderer* renderer) {
     }
 }
 
-void drawTank(SDL_Renderer* renderer, SDL_Rect* dst) {
+void drawTank(SDL_Renderer* renderer, Tank* tank) {
     if (!tankTexture) return;
-
-    SDL_RenderCopy(renderer, tankTexture, NULL, dst);
+    SDL_RenderCopy(renderer, tankTexture, NULL, &tank->rect);
 }
-void tankmovement(SDL_Texture *pTankpicture, SDL_Texture *pBackground, SDL_Rect *shipRect, SDL_Renderer *pRenderer, SDL_Event event)
+
+void tankmovement(SDL_Texture* pTankpicture, SDL_Texture* pBackground, Tank* tank, SDL_Renderer* pRenderer, SDL_Event event)
 {
-    float shipX = (WINDOW_WIDTH - shipRect->w) / 2;
-    float shipY = (WINDOW_HEIGHT - shipRect->h) / 2;
-    float shipVelocityX = 0;
-    float shipVelocityY = 0;
+    float tankX = (WINDOW_WIDTH - tank->rect.w) / 2;
+    float tankY = (WINDOW_HEIGHT - tank->rect.h) / 2;
+    float tankVelocityX = 0;
+    float tankVelocityY = 0;
     float angle = 0.0f;
 
     bool closeWindow = false;
@@ -42,29 +43,21 @@ void tankmovement(SDL_Texture *pTankpicture, SDL_Texture *pBackground, SDL_Rect 
                 case SDL_KEYDOWN:
                     switch (event.key.keysym.scancode) {
                         case SDL_SCANCODE_W:
-                            up = true;
-                            break;
                         case SDL_SCANCODE_UP:
                             up = true;
-                            break;    
-                        case SDL_SCANCODE_S:
-                            down = true;
                             break;
+                        case SDL_SCANCODE_S:
                         case SDL_SCANCODE_DOWN:
                             down = true;
-                            break;    
+                            break;
                         case SDL_SCANCODE_A:
+                        case SDL_SCANCODE_LEFT:
                             angle -= 10.0f;
                             break;
-                        case SDL_SCANCODE_LEFT:
-                        angle -= 10.0f;
-                        break;
                         case SDL_SCANCODE_D:
+                        case SDL_SCANCODE_RIGHT:
                             angle += 10.0f;
                             break;
-                        case SDL_SCANCODE_RIGHT:
-                        angle += 10.0f;
-                        break;
                         default:
                             break;
                     }
@@ -72,16 +65,13 @@ void tankmovement(SDL_Texture *pTankpicture, SDL_Texture *pBackground, SDL_Rect 
                 case SDL_KEYUP:
                     switch (event.key.keysym.scancode) {
                         case SDL_SCANCODE_W:
+                        case SDL_SCANCODE_UP:
                             up = false;
                             break;
-                        case SDL_SCANCODE_UP:
-                        up = false;
-                        break;
                         case SDL_SCANCODE_S:
+                        case SDL_SCANCODE_DOWN:
                             down = false;
                             break;
-                        case SDL_SCANCODE_DOWN:
-                        down = false;
                         default:
                             break;
                     }
@@ -89,36 +79,35 @@ void tankmovement(SDL_Texture *pTankpicture, SDL_Texture *pBackground, SDL_Rect 
             }
         }
 
-        shipVelocityX = 0;
-        shipVelocityY = 0;
+        tankVelocityX = 0;
+        tankVelocityY = 0;
 
-        // Räkna ut rörelse baserat på riktning och vinkel — justerat med -90° för att peka uppåt
         if (up && !down) {
             float radians = (angle - 90.0f) * M_PI / 180.0f;
-            shipVelocityX = cos(radians) * SPEED;
-            shipVelocityY = sin(radians) * SPEED;
+            tankVelocityX = cos(radians) * SPEED;
+            tankVelocityY = sin(radians) * SPEED;
         }
         if (down && !up) {
             float radians = (angle - 90.0f) * M_PI / 180.0f;
-            shipVelocityX = -cos(radians) * SPEED;
-            shipVelocityY = -sin(radians) * SPEED;
+            tankVelocityX = -cos(radians) * SPEED;
+            tankVelocityY = -sin(radians) * SPEED;
         }
 
-        shipX += shipVelocityX / 60;
-        shipY += shipVelocityY / 60;
+        tankX += tankVelocityX / 60;
+        tankY += tankVelocityY / 60;
 
-        // Håll inom fönstret
-        if (shipX < 0) shipX = 0;
-        if (shipY < 0) shipY = 0;
-        if (shipX > WINDOW_WIDTH - shipRect->w) shipX = WINDOW_WIDTH - shipRect->w;
-        if (shipY > WINDOW_HEIGHT - shipRect->h) shipY = WINDOW_HEIGHT - shipRect->h;
+        if (tankX < 0) tankX = 0;
+        if (tankY < 0) tankY = 0;
+        if (tankX > WINDOW_WIDTH - tank->rect.w) tankX = WINDOW_WIDTH - tank->rect.w;
+        if (tankY > WINDOW_HEIGHT - tank->rect.h) tankY = WINDOW_HEIGHT - tank->rect.h;
 
-        shipRect->x = shipX;
-        shipRect->y = shipY;
+        tank->rect.x = tankX;
+        tank->rect.y = tankY;
+        tank->angle = angle;
 
         SDL_RenderClear(pRenderer);
         SDL_RenderCopy(pRenderer, pBackground, NULL, NULL);
-        SDL_RenderCopyEx(pRenderer, pTankpicture, NULL, shipRect, angle, NULL, SDL_FLIP_NONE);
+        SDL_RenderCopyEx(pRenderer, pTankpicture, NULL, &tank->rect, angle, NULL, SDL_FLIP_NONE);
         SDL_RenderPresent(pRenderer);
         SDL_Delay(1000 / 60);
     }
