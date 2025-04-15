@@ -1,14 +1,13 @@
-CC = clang
-CFLAGS = -Wall -Wextra -std=c11 -I/opt/homebrew/include/SDL2 -Iinclude
-LDFLAGS = -L/opt/homebrew/lib -lSDL2 -lSDL2_image
-
+CC = gcc
+CFLAGS = -Wall -Wextra -Iinclude -I/usr/local/include/SDL2 -D_THREAD_SAFE
+LDFLAGS = -L/usr/local/lib -lSDL2 -lSDL2_image
 SRC = $(wildcard src/*.c)
-OUT = main
+OBJ = $(SRC:.c=.o)
+TARGET = spel
 
-all: $(OUT)
+all: $(TARGET)
 
-$(OUT): $(SRC)
-	$(CC) $(CFLAGS) $(SRC) -o $(OUT) $(LDFLAGS)
-
+$(TARGET): $(OBJ)
+	$(CC) -o $@ $^ $(LDFLAGS)
 clean:
-	rm -f $(OUT)
+	rm -f $(OBJ) $(TARGET)
