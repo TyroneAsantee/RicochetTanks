@@ -5,7 +5,6 @@
 #include "tank.h"
 #include "timer.h"
 
-#define SPEED 100
 #define WINDOW_WIDTH 800
 #define WINDOW_HEIGHT 600
 

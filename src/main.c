@@ -1,11 +1,14 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
 #include <stdbool.h>
+#include <math.h>
 #include "tank.h"
 #include "timer.h"
+#include "bullet.h"
 
 #define WINDOW_WIDTH 800
 #define WINDOW_HEIGHT 600
+#define SPEED 100
 
 typedef struct {
     SDL_Window *pWindow;
@@ -15,7 +18,8 @@ typedef struct {
     SDL_Event event;
     float angle;
     Timer timer;
-    Tank tank;                      //Använder Tank-structen
+    Tank tank;
+    Bullet bullets[MAX_BULLETS];
 } Game;
 
 void initiate(Game* game);
@@ -38,7 +42,7 @@ void initiate(Game *game)
     }
 
     if (!(IMG_Init(IMG_INIT_PNG) & IMG_INIT_PNG)) {
-        SDL_Log("SDL_image Init Error: %s", IMG_GetError());
+        SDL_Log("SDL_image Init Error: %s", SDL_GetError());
         SDL_Quit();
         return;
     }
@@ -58,16 +62,20 @@ void initiate(Game *game)
     }
 
     initTank(game->pRenderer);
+    loadBulletTexture(game->pRenderer);
 
-    // Initiera tankens värden
-    game->tank.rect.x = (WINDOW_WIDTH - 64) / 2;
-    game->tank.rect.y = (WINDOW_HEIGHT - 64) / 2;
     game->tank.rect.w = 64;
     game->tank.rect.h = 64;
+    game->tank.rect.x = (WINDOW_WIDTH - game->tank.rect.w) / 2;
+    game->tank.rect.y = (WINDOW_HEIGHT - game->tank.rect.h) / 2;
     game->tank.angle = 0.0f;
     game->tank.velocityX = 0;
     game->tank.velocityY = 0;
     game->tank.health = 100;
+
+    for (int i = 0; i < MAX_BULLETS; i++) {
+        initBullet(&game->bullets[i]);
+    }
 
     SDL_Surface *pTankSurface = IMG_Load("resources/tank.png");
     game->pTankpicture = SDL_CreateTextureFromSurface(game->pRenderer, pTankSurface);
@@ -80,16 +88,123 @@ void initiate(Game *game)
     }
     game->pBackground = SDL_CreateTextureFromSurface(game->pRenderer, bgSurface);
     SDL_FreeSurface(bgSurface);
+
+    initiate_timer(&game->timer);
 }
 
 void run(Game *game) 
 {
-    tankmovement(game->pTankpicture, game->pBackground, &game->tank, game->pRenderer, game->event);
+    float shipX = game->tank.rect.x;
+    float shipY = game->tank.rect.y;
+    float angle = game->tank.angle;
+    float shipVelocityX = 0;
+    float shipVelocityY = 0;
+    bool closeWindow = false;
+    bool up = false, down = false;
+
+    while (!closeWindow) {
+        update_timer(&game->timer);
+        float dt = get_timer(&game->timer);
+
+        while (SDL_PollEvent(&game->event)) {
+            switch (game->event.type) {
+                case SDL_QUIT:
+                    closeWindow = true;
+                    break;
+                case SDL_KEYDOWN:
+                    switch (game->event.key.keysym.scancode) {
+                        case SDL_SCANCODE_SPACE:
+                            for (int i = 0; i < MAX_BULLETS; i++) {
+                                if (!game->bullets[i].active) {
+                                    fireBullet(&game->bullets[i],
+                                        shipX + game->tank.rect.w / 2,
+                                        shipY + game->tank.rect.h / 2,
+                                        angle);
+                                    break;
+                                }
+                            }
+                            break;
+                        case SDL_SCANCODE_W:
+                        case SDL_SCANCODE_UP:
+                            up = true;
+                            break;
+                        case SDL_SCANCODE_S:
+                        case SDL_SCANCODE_DOWN:
+                            down = true;
+                            break;
+                        case SDL_SCANCODE_A:
+                        case SDL_SCANCODE_LEFT:
+                            angle -= 10.0f;
+                            break;
+                        case SDL_SCANCODE_D:
+                        case SDL_SCANCODE_RIGHT:
+                            angle += 10.0f;
+                            break;
+                        default:
+                            break;
+                    }
+                    break;
+                case SDL_KEYUP:
+                    switch (game->event.key.keysym.scancode) {
+                        case SDL_SCANCODE_W:
+                        case SDL_SCANCODE_UP:
+                            up = false;
+                            break;
+                        case SDL_SCANCODE_S:
+                        case SDL_SCANCODE_DOWN:
+                            down = false;
+                            break;
+                        default:
+                            break;
+                    }
+                    break;
+            }
+        }
+
+        shipVelocityX = 0;
+        shipVelocityY = 0;
+
+        if (up && !down) {
+            float radians = (angle - 90.0f) * M_PI / 180.0f;
+            shipVelocityX = cos(radians) * SPEED;
+            shipVelocityY = sin(radians) * SPEED;
+        }
+        if (down && !up) {
+            float radians = (angle - 90.0f) * M_PI / 180.0f;
+            shipVelocityX = -cos(radians) * SPEED;
+            shipVelocityY = -sin(radians) * SPEED;
+        }
+
+        shipX += shipVelocityX * dt;
+        shipY += shipVelocityY * dt;
+
+        if (shipX < 0) shipX = 0;
+        if (shipY < 0) shipY = 0;
+        if (shipX > WINDOW_WIDTH - game->tank.rect.w) shipX = WINDOW_WIDTH - game->tank.rect.w;
+        if (shipY > WINDOW_HEIGHT - game->tank.rect.h) shipY = WINDOW_HEIGHT - game->tank.rect.h;
+
+        game->tank.rect.x = shipX;
+        game->tank.rect.y = shipY;
+        game->tank.angle = angle;
+
+        SDL_RenderClear(game->pRenderer);
+        SDL_RenderCopy(game->pRenderer, game->pBackground, NULL, NULL);
+        SDL_RenderCopyEx(game->pRenderer, game->pTankpicture, NULL, &game->tank.rect, game->tank.angle, NULL, SDL_FLIP_NONE);
+
+        for (int i = 0; i < MAX_BULLETS; i++) {
+            updateBullet(&game->bullets[i], dt);
+            renderBullet(game->pRenderer, &game->bullets[i]);
+        }
+
+        SDL_RenderPresent(game->pRenderer);
+        SDL_Delay(1000 / 60);
+    }
 }
 
 void close(Game *game) 
 {
     destroyTank();
+    destroyBulletTexture();
     SDL_DestroyTexture(game->pTankpicture);
     SDL_DestroyTexture(game->pBackground);
     SDL_DestroyRenderer(game->pRenderer);

@@ -5,6 +5,7 @@
 #include <SDL2/SDL_image.h>
 #include <stdbool.h>
 #include <math.h>
+#define SPEED 100
 
 typedef struct
 {
