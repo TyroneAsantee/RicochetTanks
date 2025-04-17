@@ -6,6 +6,10 @@
 #include "timer.h"
 #include "bullet.h"
 
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
 #define WINDOW_WIDTH 800
 #define WINDOW_HEIGHT 600
 #define SPEED 100
@@ -26,7 +30,7 @@ void initiate(Game* game);
 void run(Game* game);
 void close(Game* game);
 
-int main(void) {
+int main(int argv, char** args) {
     Game game;
     initiate(&game);
     run(&game);
@@ -62,16 +66,17 @@ void initiate(Game *game)
     }
 
     initTank(game->pRenderer);
+    loadHeartTexture(game->pRenderer);
     loadBulletTexture(game->pRenderer);
 
-    game->tank.rect.w = 64;
-    game->tank.rect.h = 64;
+    game->tank.rect.w = 40;
+    game->tank.rect.h = 40;
     game->tank.rect.x = (WINDOW_WIDTH - game->tank.rect.w) / 2;
     game->tank.rect.y = (WINDOW_HEIGHT - game->tank.rect.h) / 2;
     game->tank.angle = 0.0f;
     game->tank.velocityX = 0;
     game->tank.velocityY = 0;
-    game->tank.health = 100;
+    game->tank.health = 3;
 
     for (int i = 0; i < MAX_BULLETS; i++) {
         initBullet(&game->bullets[i]);
@@ -191,6 +196,9 @@ void run(Game *game)
         SDL_RenderCopy(game->pRenderer, game->pBackground, NULL, NULL);
         SDL_RenderCopyEx(game->pRenderer, game->pTankpicture, NULL, &game->tank.rect, game->tank.angle, NULL, SDL_FLIP_NONE);
 
+        renderTankHealth(game->pRenderer, game->tank.health);
+
+
         for (int i = 0; i < MAX_BULLETS; i++) {
             updateBullet(&game->bullets[i], dt);
             renderBullet(game->pRenderer, &game->bullets[i]);
@@ -205,6 +213,7 @@ void close(Game *game)
 {
     destroyTank();
     destroyBulletTexture();
+    destroyHeartTexture();
     SDL_DestroyTexture(game->pTankpicture);
     SDL_DestroyTexture(game->pBackground);
     SDL_DestroyRenderer(game->pRenderer);

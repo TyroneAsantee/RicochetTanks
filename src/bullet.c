@@ -2,6 +2,10 @@
 #include <math.h>
 #include <SDL2/SDL_image.h>
 
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
 static SDL_Texture* bulletTexture = NULL;
 
 void loadBulletTexture(SDL_Renderer* renderer) 
@@ -38,8 +42,8 @@ void fireBullet(Bullet* bullet, float startX, float startY, float angle)
     float radians = (angle - 90.0f) * M_PI / 180.0f;
     bullet->rect.x = startX;
     bullet->rect.y = startY;
-    bullet->rect.w = 18;  // Skala ner från 360x360 
-    bullet->rect.h = 18;
+    bullet->rect.w = 12;  // Skala ner från 360x360 
+    bullet->rect.h = 12;
     bullet->velocityX = cos(radians) * BULLET_SPEED;
     bullet->velocityY = sin(radians) * BULLET_SPEED;
     bullet->active = true;
