@@ -1,20 +1,23 @@
 CC = gcc
 
-# Justera dessa till var du har SDL2 på din dator
-SDL_PATH = C:/SDL2
+# Flags
+CFLAGS = -Wall -std=c99 -I/mingw64/include/SDL2 -Iinclude
+LDFLAGS = -L/mingw64/lib -lmingw32 -lSDL2main -lSDL2 -lSDL2_image
 
-INCLUDES = -I$(SDL_PATH)/include -Isrc -Iinclude
-CFLAGS = -Wall -Wextra -std=c11 $(INCLUDES)
+# Filer
+SRC = src/main.c src/tank.c src/timer.c src/bullet.c src/Collision.c
+OBJ = $(SRC:.c=.o)
+TARGET = spel.exe
 
-LDFLAGS = -L$(SDL_PATH)/lib -lmingw32 -lSDL2main -lSDL2 -lSDL2_image
+# Bygg-regel
+all: $(TARGET)
 
-SRC = $(wildcard src/*.c)
-OUT = main.exe
+$(TARGET): $(OBJ)
+	$(CC) -o $@ $^ $(LDFLAGS)
 
-all: $(OUT)
+%.o: %.c
+	$(CC) $(CFLAGS) -c $< -o $@
 
-$(OUT): $(SRC)
-	$(CC) $(CFLAGS) $(SRC) -o $(OUT) $(LDFLAGS)
-
+# Rensa
 clean:
-	del /Q $(OUT)
+	del /Q src\\*.o spel.exe 2>nul || exit 0

@@ -40,8 +40,6 @@ int main(int argv, char** args) {
     return 0;
 }
 
-
-
 void initiate(Game *game) 
 {
     if (SDL_Init(SDL_INIT_VIDEO) != 0) {
