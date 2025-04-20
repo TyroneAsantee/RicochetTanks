@@ -37,7 +37,7 @@ void initBullet(Bullet* bullet)
     bullet->active = false;
 }
 
-void fireBullet(Bullet* bullet, float startX, float startY, float angle) 
+void fireBullet(Bullet* bullet, float startX, float startY, float angle, int ownerId) 
 {
     float radians = (angle - 90.0f) * M_PI / 180.0f;
     bullet->rect.x = startX;
@@ -47,6 +47,8 @@ void fireBullet(Bullet* bullet, float startX, float startY, float angle)
     bullet->velocityX = cos(radians) * BULLET_SPEED;
     bullet->velocityY = sin(radians) * BULLET_SPEED;
     bullet->active = true;
+
+    bullet->ownerId = ownerId;
 }
 
 void updateBullet(Bullet* bullet, float delta_time) 

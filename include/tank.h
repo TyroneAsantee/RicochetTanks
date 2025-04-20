@@ -14,6 +14,7 @@ typedef struct
     float velocityY;
     float angle;
     int health;
+    bool alive;
 } Tank;
 
 void initTank(SDL_Renderer* renderer);

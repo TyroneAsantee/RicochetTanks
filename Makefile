@@ -1,25 +1,20 @@
-# Kompilerare
 CC = gcc
 
-# Flags
-CFLAGS = -Wall -std=c99 -I/mingw64/include/SDL2 -Iinclude
-LDFLAGS = -L/mingw64/lib -lmingw32 -lSDL2main -lSDL2 -lSDL2_image
+# Justera dessa till var du har SDL2 på din dator
+SDL_PATH = C:/SDL2
 
-# Filer
-SRC = src/main.c src/tank.c src/timer.c src/bullet.c
-OBJ = $(SRC:.c=.o)
-TARGET = spel.exe
+INCLUDES = -I$(SDL_PATH)/include -Isrc -Iinclude
+CFLAGS = -Wall -Wextra -std=c11 $(INCLUDES)
 
-# Bygg-regel
-all: $(TARGET)
+LDFLAGS = -L$(SDL_PATH)/lib -lmingw32 -lSDL2main -lSDL2 -lSDL2_image
 
-$(TARGET): $(OBJ)
-	$(CC) -o $@ $^ $(LDFLAGS)
+SRC = $(wildcard src/*.c)
+OUT = main.exe
 
-%.o: %.c
-	$(CC) $(CFLAGS) -c $< -o $@
+all: $(OUT)
 
-# Rensa
+$(OUT): $(SRC)
+	$(CC) $(CFLAGS) $(SRC) -o $(OUT) $(LDFLAGS)
+
 clean:
-	del /Q src\\*.o spel.exe 2>nul || exit 0
-
+	del /Q $(OUT)

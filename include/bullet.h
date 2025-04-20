@@ -10,12 +10,13 @@ typedef struct {
     float velocityX;
     float velocityY;
     bool active;
+    int ownerId;
 } Bullet;
 
 void loadBulletTexture(SDL_Renderer* renderer);
 void destroyBulletTexture(void);
 void initBullet(Bullet* bullet);
-void fireBullet(Bullet* bullet, float startX, float startY, float angle);
+void fireBullet(Bullet* bullet, float startX, float startY, float angle, int ownerId);
 void updateBullet(Bullet* bullet, float delta_time);
 void renderBullet(SDL_Renderer* renderer, Bullet* bullet);
 bool bulletOutOfBounds(Bullet* bullet);

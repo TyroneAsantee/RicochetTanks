@@ -5,6 +5,7 @@
 #include "tank.h"
 #include "timer.h"
 #include "bullet.h"
+#include "collision.h"
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -27,6 +28,7 @@ typedef struct {
 } Game;
 
 void initiate(Game* game);
+bool checkCollision(SDL_Rect* a, SDL_FRect* b);
 void run(Game* game);
 void close(Game* game);
 
@@ -37,6 +39,8 @@ int main(int argv, char** args) {
     close(&game);
     return 0;
 }
+
+
 
 void initiate(Game *game) 
 {
@@ -77,6 +81,7 @@ void initiate(Game *game)
     game->tank.velocityX = 0;
     game->tank.velocityY = 0;
     game->tank.health = 3;
+    game->tank.alive = true;
 
     for (int i = 0; i < MAX_BULLETS; i++) {
         initBullet(&game->bullets[i]);
@@ -124,7 +129,8 @@ void run(Game *game)
                                     fireBullet(&game->bullets[i],
                                         shipX + game->tank.rect.w / 2,
                                         shipY + game->tank.rect.h / 2,
-                                        angle);
+                                        angle,
+                                        0);
                                     break;
                                 }
                             }
@@ -188,21 +194,39 @@ void run(Game *game)
         if (shipX > WINDOW_WIDTH - game->tank.rect.w) shipX = WINDOW_WIDTH - game->tank.rect.w;
         if (shipY > WINDOW_HEIGHT - game->tank.rect.h) shipY = WINDOW_HEIGHT - game->tank.rect.h;
 
-        game->tank.rect.x = shipX;
-        game->tank.rect.y = shipY;
-        game->tank.angle = angle;
-
         SDL_RenderClear(game->pRenderer);
         SDL_RenderCopy(game->pRenderer, game->pBackground, NULL, NULL);
-        SDL_RenderCopyEx(game->pRenderer, game->pTankpicture, NULL, &game->tank.rect, game->tank.angle, NULL, SDL_FLIP_NONE);
-
-        renderTankHealth(game->pRenderer, game->tank.health);
-
+        
+        if (game->tank.alive) {
+            game->tank.rect.x = shipX;
+            game->tank.rect.y = shipY;
+            game->tank.angle = angle;
+        
+            SDL_RenderCopyEx(game->pRenderer, game->pTankpicture, NULL, &game->tank.rect, game->tank.angle, NULL, SDL_FLIP_NONE);
+            renderTankHealth(game->pRenderer, game->tank.health);
+        }        
 
         for (int i = 0; i < MAX_BULLETS; i++) {
             updateBullet(&game->bullets[i], dt);
+        
+            if (game->bullets[i].active &&
+                game->bullets[i].ownerId != 0 &&
+                checkCollision(&game->tank.rect, &game->bullets[i].rect)) {
+                game->bullets[i].active = false;
+        
+                if (game->tank.alive && game->tank.health > 0) {
+                    game->tank.health--;
+                    SDL_Log("Tank is hit! health: %d", game->tank.health);
+        
+                    if (game->tank.health <= 0) {
+                        game->tank.alive = false;
+                        SDL_Log("Tank is dead!");
+                    }
+                }
+            }
+        
             renderBullet(game->pRenderer, &game->bullets[i]);
-        }
+        }        
 
         SDL_RenderPresent(game->pRenderer);
         SDL_Delay(1000 / 60);
