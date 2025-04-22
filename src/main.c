@@ -1,5 +1,6 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
+#include <SDL2/SDL_net.h>
 #include <stdbool.h>
 #include <math.h>
 #include "tank.h"
@@ -14,6 +15,17 @@
 #define WINDOW_WIDTH 800
 #define WINDOW_HEIGHT 600
 #define SPEED 100
+#define SERVER_PORT 12345
+
+typedef enum {
+    CONNECT,  
+} ClientCommand;
+
+typedef struct {
+    ClientCommand command;
+    int playerNumber; 
+} ClientData;
+
 
 typedef struct {
     SDL_Window *pWindow;
@@ -25,6 +37,11 @@ typedef struct {
     Timer timer;
     Tank tank;
     Bullet bullets[MAX_BULLETS];
+    UDPsocket pSocket;
+    IPaddress serverAddress;
+    UDPpacket *pPacket;
+    int playerNumber; 
+
 } Game;
 
 void initiate(Game* game);
@@ -53,6 +70,13 @@ void initiate(Game *game)
         return;
     }
 
+    if (SDLNet_Init() != 0) {
+        SDL_Log("SDLNet Init Error: %s", SDLNet_GetError());
+        IMG_Quit();
+        SDL_Quit();
+        return;
+    }
+
     game->pWindow = SDL_CreateWindow("Ricochet Tank", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, WINDOW_WIDTH, WINDOW_HEIGHT, SDL_WINDOW_SHOWN);
     if (!game->pWindow) {
         SDL_Log("Window error: %s", SDL_GetError());
@@ -66,6 +90,83 @@ void initiate(Game *game)
         SDL_Quit();
         return;
     }
+    game->pSocket = SDLNet_UDP_Open(0);  // 0 lets the system assign a port
+    if (!game->pSocket) {
+        SDL_Log("UDP Socket Open Error: %s", SDLNet_GetError());
+        SDL_DestroyRenderer(game->pRenderer);
+        SDL_DestroyWindow(game->pWindow);
+        SDLNet_Quit();
+        IMG_Quit();
+        SDL_Quit();
+        return;
+    }
+
+    if (SDLNet_ResolveHost(&game->serverAddress, "127.0.0.1", SERVER_PORT) != 0) {
+        SDL_Log("Resolve Host Error: %s", SDLNet_GetError());
+        SDLNet_UDP_Close(game->pSocket);
+        SDL_DestroyRenderer(game->pRenderer);
+        SDL_DestroyWindow(game->pWindow);
+        SDLNet_Quit();
+        IMG_Quit();
+        SDL_Quit();
+        return;
+    }
+
+    game->pPacket = SDLNet_AllocPacket(512);
+    if (!game->pPacket) {
+        SDL_Log("Packet Alloc Error: %s", SDLNet_GetError());
+        SDLNet_UDP_Close(game->pSocket);
+        SDL_DestroyRenderer(game->pRenderer);
+        SDL_DestroyWindow(game->pWindow);
+        SDLNet_Quit();
+        IMG_Quit();
+        SDL_Quit();
+        return;
+    }
+
+    ClientData connectData = {CONNECT, 0};
+    memcpy(game->pPacket->data, &connectData, sizeof(ClientData));
+    game->pPacket->len = sizeof(ClientData);
+    game->pPacket->address = game->serverAddress;
+    if (SDLNet_UDP_Send(game->pSocket, -1, game->pPacket) == 0) {
+        SDL_Log("UDP Send Error: %s", SDLNet_GetError());
+        SDLNet_FreePacket(game->pPacket);
+        SDLNet_UDP_Close(game->pSocket);
+        SDL_DestroyRenderer(game->pRenderer);
+        SDL_DestroyWindow(game->pWindow);
+        SDLNet_Quit();
+        IMG_Quit();
+        SDL_Quit();
+        return;
+    }
+
+    bool received = false;
+    Uint32 timeout = SDL_GetTicks() + 5000;  // 5-second timeout
+    while (!received && SDL_GetTicks() < timeout) {
+        if (SDLNet_UDP_Recv(game->pSocket, game->pPacket)) {
+            ClientData response;
+            memcpy(&response, game->pPacket->data, sizeof(ClientData));
+            if (response.command == CONNECT) {
+                game->playerNumber = response.playerNumber;
+                SDL_Log("Connected to server, assigned player number: %d", game->playerNumber);
+                received = true;
+            }
+        }
+        SDL_Delay(10);
+    }
+
+    if (!received) {
+        SDL_Log("Failed to connect to server: No response received");
+        SDLNet_FreePacket(game->pPacket);
+        SDLNet_UDP_Close(game->pSocket);
+        SDL_DestroyRenderer(game->pRenderer);
+        SDL_DestroyWindow(game->pWindow);
+        SDLNet_Quit();
+        IMG_Quit();
+        SDL_Quit();
+        return;
+    }
+
 
     initTank(game->pRenderer);
     loadHeartTexture(game->pRenderer);
@@ -92,6 +193,13 @@ void initiate(Game *game)
     SDL_Surface *bgSurface = IMG_Load("resources/background.png");
     if (!bgSurface) {
         SDL_Log("Could not load background: %s", IMG_GetError());
+        SDLNet_FreePacket(game->pPacket);
+        SDLNet_UDP_Close(game->pSocket);
+        SDL_DestroyRenderer(game->pRenderer);
+        SDL_DestroyWindow(game->pWindow);
+        SDLNet_Quit();
+        IMG_Quit();
+        SDL_Quit();
         return;
     }
     game->pBackground = SDL_CreateTextureFromSurface(game->pRenderer, bgSurface);
@@ -119,6 +227,7 @@ void run(Game *game)
                 case SDL_QUIT:
                     closeWindow = true;
                     break;
+
                 case SDL_KEYDOWN:
                     switch (game->event.key.keysym.scancode) {
                         case SDL_SCANCODE_SPACE:
@@ -240,6 +349,9 @@ void close(Game *game)
     SDL_DestroyTexture(game->pBackground);
     SDL_DestroyRenderer(game->pRenderer);
     SDL_DestroyWindow(game->pWindow);
+    SDLNet_FreePacket(game->pPacket);
+    SDLNet_UDP_Close(game->pSocket);
+    SDLNet_Quit();
     IMG_Quit();
     SDL_Quit();
 }
