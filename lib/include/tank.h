@@ -2,24 +2,24 @@
 #define TANK_H
 
 #include <SDL2/SDL.h>
-#include <SDL2/SDL_image.h>
 #include <stdbool.h>
-#include <math.h>
+
 #define SPEED 100
 
-typedef struct
-{
-    SDL_Rect rect;
-    float velocityX;
-    float velocityY;
-    float angle;
-    int health;
-    bool alive;
-} Tank;
+typedef struct Tank Tank;
+
+Tank* createTank(void);
+void destroyTankInstance(Tank* tank);
+
+void setTankPosition(Tank* tank, int x, int y);
+void setTankAngle(Tank* tank, float angle);
+void setTankHealth(Tank* tank, int health);
+bool isTankAlive(Tank* tank);
+
+SDL_Rect getTankRect(Tank* tank);
+float getTankAngle(Tank* tank);
 
 void initTank(SDL_Renderer* renderer);
-SDL_Texture* getTankTexture(void);
-void tankmovement(SDL_Texture* pTankpicture, SDL_Texture* pBackground, Tank* tank, SDL_Renderer* pRenderer, SDL_Event event);
 void drawTank(SDL_Renderer* renderer, Tank* tank);
 void loadHeartTexture(SDL_Renderer* renderer);
 void destroyHeartTexture(void);

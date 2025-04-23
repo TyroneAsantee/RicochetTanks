@@ -10,7 +10,7 @@ static SDL_Texture* bulletTexture = NULL;
 
 void loadBulletTexture(SDL_Renderer* renderer) 
 {
-    bulletTexture = IMG_LoadTexture(renderer, "resources/bullet.png");
+    bulletTexture = IMG_LoadTexture(renderer, "../lib/resources/bullet.png");
     if (!bulletTexture) 
     {
         SDL_Log("Kunde inte ladda bullet.png: %s", IMG_GetError());
