@@ -6,3 +6,8 @@ main
 *.o
 Makefile_mac
 Makefie
+# Ignore compiled executables
+*.exe
+
+# Ignore VSCode settings (optional, remove if you want to commit them)
+.vscode/
