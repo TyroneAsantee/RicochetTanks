@@ -1,10 +1,11 @@
 CC = gcc
+
 CFLAGS = -Wall -Wextra \
          -I../lib/include \
          -I/usr/local/include/SDL2 \
          -D_THREAD_SAFE
 
-LDFLAGS = -L/usr/local/lib -lSDL2 -lSDL2_image -lSDL2_net
+LDFLAGS = -L/usr/local/lib -lSDL2 -lSDL2_image -lSDL2_net -lSDL2_ttf
 
 LIB_SRC = $(wildcard ../lib/src/*.c)
 CLIENT_SRC = $(wildcard src/*.c)

@@ -7,6 +7,7 @@
 #include "timer.h"
 #include "bullet.h"
 #include "collision.h"
+#include "text.h"
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -25,6 +26,7 @@ typedef enum
 {
     STATE_MENU,
     STATE_RUNNING,
+    STATE_SELECT_TANK,
     STATE_EXIT
 } GameState;
 
@@ -47,6 +49,7 @@ typedef struct {
     IPaddress serverAddress;
     UDPpacket *pPacket;
     int playerNumber; 
+    int tankColorId;
     GameState state;
 } Game;
 
@@ -54,6 +57,8 @@ void initiate(Game* game);
 bool connectToServer(Game* game);
 void run(Game* game);
 void runMainMenu(Game* game);
+void selectTank(Game* game);
+void loadSelectedTankTexture(Game* game);
 void close(Game* game);
 
 int main(int argv, char** args) {
@@ -67,6 +72,9 @@ int main(int argv, char** args) {
                 break;
             case STATE_RUNNING:
                 run(&game);
+                break;
+            case STATE_SELECT_TANK:
+                selectTank(&game);
                 break;
             default:
                 game.state = STATE_EXIT;
@@ -89,10 +97,7 @@ void initiate(Game *game)
     initTank(game->pRenderer);
     loadHeartTexture(game->pRenderer);
     loadBulletTexture(game->pRenderer);
-
-    SDL_Surface *pTankSurface = IMG_Load("../lib/resources/tank.png");
-    game->pTankpicture = SDL_CreateTextureFromSurface(game->pRenderer, pTankSurface);
-    SDL_FreeSurface(pTankSurface);
+    initTextSystem("../lib/resources/Orbitron-Bold.ttf", 32);
 
     SDL_Surface *bgSurface = IMG_Load("../lib/resources/background.png");
     game->pBackground = SDL_CreateTextureFromSurface(game->pRenderer, bgSurface);
@@ -108,6 +113,7 @@ void initiate(Game *game)
     game->state = STATE_MENU;
     game->pPacket = NULL;
     game->pSocket = NULL;
+    game->tankColorId = 0;
 }
 
 bool connectToServer(Game* game) {
@@ -149,11 +155,13 @@ void runMainMenu(Game* game) {
     SDL_Texture* bg = IMG_LoadTexture(game->pRenderer, "../lib/resources/menu_bg.png");
     SDL_Texture* btnHost = IMG_LoadTexture(game->pRenderer, "../lib/resources/btn_host.png");
     SDL_Texture* btnConnect = IMG_LoadTexture(game->pRenderer, "../lib/resources/btn_connect.png");
+    SDL_Texture* btnSelectTank = IMG_LoadTexture(game->pRenderer, "../lib/resources/btn_select_tank.png");
     SDL_Texture* btnExit = IMG_LoadTexture(game->pRenderer, "../lib/resources/btn_exit.png");
 
-    SDL_Rect rectHost = {250, 330, 300, 60};
-    SDL_Rect rectConnect = {250, 410, 300, 60};
-    SDL_Rect rectExit = {250, 490, 300, 60};
+    SDL_Rect rectHost = {250, 290, 300, 60};
+    SDL_Rect rectConnect = {250, 370, 300, 60};
+    SDL_Rect rectSelectTank = {250, 450, 300, 60};
+    SDL_Rect rectExit = {250, 530, 300, 60};
 
     while (inMenu) {
         while (SDL_PollEvent(&game->event)) {
@@ -165,15 +173,20 @@ void runMainMenu(Game* game) {
                 int y = game->event.button.y;
 
                 if (SDL_PointInRect(&(SDL_Point){x, y}, &rectHost)) {
+                    loadSelectedTankTexture(game);
                     game->state = STATE_RUNNING;
                     inMenu = false;
                 } else if (SDL_PointInRect(&(SDL_Point){x, y}, &rectConnect)) {
                     if (connectToServer(game)) {
+                        loadSelectedTankTexture(game);
                         game->state = STATE_RUNNING;
                         inMenu = false;
                     } else {
                         SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Nätverksfel", "Kunde inte ansluta till server", game->pWindow);
                     }
+                } else if (SDL_PointInRect(&(SDL_Point){x, y}, &rectSelectTank)) {
+                    game->state = STATE_SELECT_TANK;
+                    inMenu = false;
                 } else if (SDL_PointInRect(&(SDL_Point){x, y}, &rectExit)) {
                     game->state = STATE_EXIT;
                     inMenu = false;
@@ -185,6 +198,7 @@ void runMainMenu(Game* game) {
         SDL_RenderCopy(game->pRenderer, bg, NULL, NULL);
         SDL_RenderCopy(game->pRenderer, btnHost, NULL, &rectHost);
         SDL_RenderCopy(game->pRenderer, btnConnect, NULL, &rectConnect);
+        SDL_RenderCopy(game->pRenderer, btnSelectTank, NULL, &rectSelectTank);
         SDL_RenderCopy(game->pRenderer, btnExit, NULL, &rectExit);
         SDL_RenderPresent(game->pRenderer);
         SDL_Delay(16);
@@ -193,8 +207,10 @@ void runMainMenu(Game* game) {
     SDL_DestroyTexture(bg);
     SDL_DestroyTexture(btnHost);
     SDL_DestroyTexture(btnConnect);
+    SDL_DestroyTexture(btnSelectTank);
     SDL_DestroyTexture(btnExit);
 }
+
 
 void run(Game *game) 
 {
@@ -250,6 +266,10 @@ void run(Game *game)
                             break;
                         default:
                             break;
+                        case SDL_SCANCODE_ESCAPE:
+                            game->state = STATE_MENU;
+                            closeWindow = true;
+                            break;
                     }
                     break;
                 case SDL_KEYUP:
@@ -285,7 +305,6 @@ void run(Game *game)
 
         shipX += shipVelocityX * dt;
         shipY += shipVelocityY * dt;
-
         if (shipX < 0) shipX = 0;
         if (shipY < 0) shipY = 0;
         if (shipX > WINDOW_WIDTH - tankRect.w) shipX = WINDOW_WIDTH - tankRect.w;
@@ -298,7 +317,7 @@ void run(Game *game)
         SDL_RenderCopy(game->pRenderer, game->pBackground, NULL, NULL);
 
         if (isTankAlive(game->tank)) {
-            drawTank(game->pRenderer, game->tank);
+            drawTank(game->pRenderer, game->tank, game->pTankpicture);
             renderTankHealth(game->pRenderer, 3);  // Du kan byta ut 3 mot en getter vid behov
         }
 
@@ -315,12 +334,134 @@ void run(Game *game)
                 // Här kan du lägga till health-- med setTankHealth/getTankHealth
                 // men eftersom du inte har en getter än, hoppar vi det tills vidare
             }
-
             renderBullet(game->pRenderer, &game->bullets[i]);
         }
 
         SDL_RenderPresent(game->pRenderer);
         SDL_Delay(1000 / 60);
+    }
+}
+
+void selectTank(Game* game) 
+{
+    bool selecting = true;
+    int currentSelection = 0;
+    const int maxTanks = 4;
+
+    SDL_Texture* background = IMG_LoadTexture(game->pRenderer, "../lib/resources/selTankBg.png");
+
+
+    SDL_Texture* tanks[maxTanks];
+    const char* tankNames[maxTanks] = {
+                                        "Ironclad",
+                                        "Blockbuster",
+                                        "Ghost Walker",
+                                        "Shadow Reaper"
+                                        };
+    tanks[0] = IMG_LoadTexture(game->pRenderer, "../lib/resources/tank.png");
+    tanks[1] = IMG_LoadTexture(game->pRenderer, "../lib/resources/tank_lego.png");
+    tanks[2] = IMG_LoadTexture(game->pRenderer, "../lib/resources/tank_light.png");
+    tanks[3] = IMG_LoadTexture(game->pRenderer, "../lib/resources/tank_dark.png");
+
+    SDL_Rect tankRect = {250, 150, 300, 400}; // Centralt och lagom stort
+
+    float angle = 0.0f;
+    bool swingRight = true;
+    float swingSpeed = 30.0f;  // grader per sekund
+    float maxSwingAngle = 5.0f; // max +- svängning
+
+    initiate_timer(&game->timer);
+
+    while (selecting) {
+        update_timer(&game->timer);
+        float dt = get_timer(&game->timer);  
+
+        while (SDL_PollEvent(&game->event)) {
+            if (game->event.type == SDL_QUIT) {
+                game->state = STATE_EXIT;
+                selecting = false;
+            } else if (game->event.type == SDL_KEYDOWN) {
+                switch (game->event.key.keysym.sym) {
+                    case SDLK_LEFT:
+                        currentSelection = (currentSelection - 1 + maxTanks) % maxTanks;
+                        break;
+                    case SDLK_RIGHT:
+                        currentSelection = (currentSelection + 1) % maxTanks;
+                        break;
+                    case SDLK_RETURN:
+                        game->tankColorId = currentSelection;
+                        game->state = STATE_MENU;
+                        selecting = false;
+                        break;
+                    case SDLK_ESCAPE:
+                        game->state = STATE_MENU;
+                        selecting = false;
+                        break;
+                    default:
+                        break;
+                }
+            }
+        }
+
+        if (swingRight) {
+            angle += swingSpeed * dt;
+            if (angle >= maxSwingAngle) {
+                angle = maxSwingAngle;
+                swingRight = false;
+            }
+        } else {
+            angle -= swingSpeed * dt;
+            if (angle <= -maxSwingAngle) {
+                angle = -maxSwingAngle;
+                swingRight = true;
+            }
+        }
+        SDL_RenderCopy(game->pRenderer, background, NULL, NULL);
+
+        //ritar namn
+        SDL_Color white = {255, 255, 255, 255};
+        renderText(game->pRenderer, tankNames[currentSelection], (WINDOW_WIDTH / 2) - 100, 50, white);
+
+        SDL_Color gray = {180, 180, 180, 255};
+        renderText(game->pRenderer, "Press ENTER to choose", (WINDOW_WIDTH / 2) - 200, 100, gray);
+        
+        //ritar tank
+        SDL_RenderCopyEx(game->pRenderer, tanks[currentSelection], NULL, &tankRect, angle, NULL, SDL_FLIP_NONE);
+        
+        SDL_RenderPresent(game->pRenderer);
+        SDL_Delay(16);
+    }
+
+    for (int i = 0; i < maxTanks; i++) {
+        SDL_DestroyTexture(tanks[i]);
+    }
+    SDL_DestroyTexture(background);
+}
+
+void loadSelectedTankTexture(Game* game)
+{
+    if (game->pTankpicture != NULL) {
+        SDL_DestroyTexture(game->pTankpicture);
+        game->pTankpicture = NULL;
+    }
+
+    switch (game->tankColorId) 
+    {
+        case 0:
+            game->pTankpicture = IMG_LoadTexture(game->pRenderer, "../lib/resources/tank.png");
+            break;
+        case 1:
+            game->pTankpicture = IMG_LoadTexture(game->pRenderer, "../lib/resources/tank_lego.png");
+            break;
+        case 2:
+            game->pTankpicture = IMG_LoadTexture(game->pRenderer, "../lib/resources/tank_light.png");
+            break;
+        case 3:
+            game->pTankpicture = IMG_LoadTexture(game->pRenderer, "../lib/resources/tank_dark.png");
+            break;
+        default:
+            game->pTankpicture = IMG_LoadTexture(game->pRenderer, "../lib/resources/tank.png");
+            break;
     }
 }
 
@@ -343,6 +484,7 @@ void close(Game *game)
         SDLNet_UDP_Close(game->pSocket);
         game->pSocket = NULL;
     }
+    closeTextSystem();
     SDLNet_Quit();
     IMG_Quit();
     SDL_Quit();
