@@ -80,7 +80,7 @@ void initTank(SDL_Renderer* renderer) {
     }
 }
 
-void drawTank(SDL_Renderer* renderer, Tank* tank) {
+void drawTank(SDL_Renderer* renderer, Tank* tank, SDL_Texture* tankTexture) {
     if (!tankTexture || !tank) return;
     SDL_RenderCopyEx(renderer, tankTexture, NULL, &tank->rect, tank->angle, NULL, SDL_FLIP_NONE);
 }

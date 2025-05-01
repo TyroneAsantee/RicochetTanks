@@ -20,7 +20,7 @@ SDL_Rect getTankRect(Tank* tank);
 float getTankAngle(Tank* tank);
 
 void initTank(SDL_Renderer* renderer);
-void drawTank(SDL_Renderer* renderer, Tank* tank);
+void drawTank(SDL_Renderer* renderer, Tank* tank, SDL_Texture* texture);
 void loadHeartTexture(SDL_Renderer* renderer);
 void destroyHeartTexture(void);
 void renderTankHealth(SDL_Renderer* renderer, int health);

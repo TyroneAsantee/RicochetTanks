@@ -511,10 +511,11 @@ void run(Game *game)
             updateBullet(&game->bullets[i], dt);
 
             SDL_Rect tankRect = getTankRect(game->tank);
+            SDL_FRect bulletRect = game->bullets[i].rect;
 
             if (game->bullets[i].active &&
                 game->bullets[i].ownerId != 0 &&
-                checkCollision(&tankRect, &game->bullets[i].rect)) {
+                checkCollision(&tankRect, &bulletRect)) {
                 game->bullets[i].active = false;
             }
             renderBullet(game->pRenderer, &game->bullets[i]);

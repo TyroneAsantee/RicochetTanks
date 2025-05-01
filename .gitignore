@@ -1,13 +1,17 @@
-.DS_Store
-.o
-.exe
+# Kompilerade binärer
 spel
-main
 *.o
-Makefile_mac
-Makefie
-# Ignore compiled executables
+*.out
 *.exe
 
-# Ignore VSCode settings (optional, remove if you want to commit them)
+# Backupfiler och systemfiler
+*~
+.DS_Store
+
+# VSCode och andra editorfiler
 .vscode/
+*.swp
+
+# Ignorera Makefile-mellanprodukter
+Makefile_mac
+Makefile
