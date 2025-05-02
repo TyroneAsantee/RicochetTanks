@@ -63,6 +63,8 @@ typedef struct {
     UDPpacket *pPacket;
     int playerNumber; 
     int tankColorId;
+    int bulletstopper;
+    int lastshottime;
     char ipAddress[64];
     Wall* topLeft;
     Wall* topRight;
