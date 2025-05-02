@@ -1,7 +1,7 @@
-#include <SDL2/SDL.h>
-#include <SDL2/SDL_image.h>
-#include <SDL2/SDL_net.h>
-#include <SDL2/SDL_ttf.h>
+#include <SDL.h>
+#include <SDL_image.h>
+#include <SDL_net.h>
+#include <SDL_ttf.h>
 #include <stdbool.h>
 #include <math.h>
 #include "tank.h"
@@ -24,6 +24,8 @@
 #define MAXTANKS 4
 #define SPEED 100
 #define SERVER_PORT 12345
+#define MAX_PLAYERS 4
+volatile int connectedPlayers = 1;
 
 typedef enum {
     CONNECT,  
@@ -63,6 +65,8 @@ typedef struct {
     UDPpacket *pPacket;
     int playerNumber; 
     int tankColorId;
+    int bulletstopper;
+    int lastshottime;
     char ipAddress[64];
     Wall* topLeft;
     Wall* topRight;
@@ -80,6 +84,7 @@ void selectTank(Game* game);
 void loadSelectedTankTexture(Game* game);
 void close(Game* game);
 bool waitForServerResponse(Game *game, Uint32 timeout_ms);
+int runAsServerThread(void* data);
 DialogResult showErrorDialog(Game* game, const char* title, const char* message);
 
 int main(int argv, char* args[]) {
@@ -399,9 +404,51 @@ void runMainMenu(Game* game) {
                 int y = game->event.button.y;
 
                 if (SDL_PointInRect(&(SDL_Point){x, y}, &rectHost)) {
-                    loadSelectedTankTexture(game);
-                    game->state = STATE_RUNNING;
-                    inMenu = false;
+                    SDLNet_Init();
+                    connectedPlayers = 1; // hosten själv
+                    SDL_CreateThread(runAsServerThread, "ServerThread", NULL);
+
+                    SDL_Texture* bgWait = IMG_LoadTexture(game->pRenderer, "../lib/resources/menu_bg.png");
+                    bool waiting = true;
+
+                    while (waiting && connectedPlayers < MAX_PLAYERS) {
+                        while (SDL_PollEvent(&game->event)) {
+                            if (game->event.type == SDL_QUIT) {
+                                game->state = STATE_EXIT;
+                                inMenu = false;
+                                waiting = false;
+                                break;
+                            } else if (game->event.type == SDL_KEYDOWN &&
+                                       game->event.key.keysym.sym == SDLK_ESCAPE) {
+                                waiting = false;
+                                break;
+                            }
+                        }
+
+                        SDL_RenderClear(game->pRenderer);
+                        SDL_RenderCopy(game->pRenderer, bgWait, NULL, NULL);
+
+                        SDL_Color white = {255, 255, 255, 255};
+                        char statusText[64];
+                        snprintf(statusText, sizeof(statusText), "Väntar på spelare... %d/%d inne", connectedPlayers, MAX_PLAYERS);
+                        renderText(game->pRenderer, statusText, 200, 300, white);
+                        renderText(game->pRenderer, "Tryck ESC för att avbryta", 200, 360, white);
+
+                        SDL_RenderPresent(game->pRenderer);
+                        SDL_Delay(100);
+                    }
+
+                    SDL_DestroyTexture(bgWait);
+
+                    if (connectedPlayers >= MAX_PLAYERS && game->state != STATE_EXIT) {
+                        loadSelectedTankTexture(game);
+                        game->state = STATE_RUNNING;
+                        inMenu = false;
+                    } else {
+                        connectedPlayers = 0;
+                        SDLNet_Quit();
+                    }
+
                 } else if (SDL_PointInRect(&(SDL_Point){x, y}, &rectConnect)) {
                     enterServerIp(game);
                     bool tryConnect = true;
@@ -417,12 +464,13 @@ void runMainMenu(Game* game) {
                             DialogResult result = showErrorDialog(game, "ERROR", timedOut ? "Kunde inte ansluta till servern." : "Kunde inte ansluta till servern.");
                             if (result == DIALOG_RESULT_TRY_AGAIN) {
                                 enterServerIp(game);
-                                tryConnect = true;  
+                                tryConnect = true;
                             } else {
-                                tryConnect = false; 
+                                tryConnect = false;
                             }
                         }
                     }
+
                 } else if (SDL_PointInRect(&(SDL_Point){x, y}, &rectSelectTank)) {
                     game->state = STATE_SELECT_TANK;
                     inMenu = false;
@@ -449,6 +497,49 @@ void runMainMenu(Game* game) {
     SDL_DestroyTexture(btnConnect);
     SDL_DestroyTexture(btnSelectTank);
     SDL_DestroyTexture(btnExit);
+}
+
+
+int runAsServerThread(void* data) {
+    UDPsocket serverSocket = SDLNet_UDP_Open(SERVER_PORT);
+    if (!serverSocket) {
+        SDL_Log("Could not open UDP socket: %s", SDLNet_GetError());
+        return -1;
+    }
+
+    UDPpacket* packet = SDLNet_AllocPacket(512);
+    if (!packet) {
+        SDL_Log("Could not allocate packet: %s", SDLNet_GetError());
+        SDLNet_UDP_Close(serverSocket);
+        return -1;
+    }
+
+    int playerNumber = 1;
+
+    while (connectedPlayers < MAX_PLAYERS) {
+        if (SDLNet_UDP_Recv(serverSocket, packet)) {
+            ClientData request;
+            memcpy(&request, packet->data, sizeof(ClientData));
+
+            if (request.command == CONNECT) {
+                ClientData response;
+                response.command = CONNECT;
+                response.playerNumber = playerNumber++;
+
+                memcpy(packet->data, &response, sizeof(ClientData));
+                packet->len = sizeof(ClientData);
+                SDLNet_UDP_Send(serverSocket, -1, packet);
+
+                SDL_Log("Spelare %d ansluten", response.playerNumber);
+                connectedPlayers++;
+            }
+        }
+        SDL_Delay(10);
+    }
+
+    SDLNet_FreePacket(packet);
+    SDLNet_UDP_Close(serverSocket);
+    return 0;
 }
 
 void run(Game *game) 
@@ -769,7 +860,6 @@ bool waitForServerResponse(Game *game, Uint32 timeout_ms) {
 
     return numready > 0;
 }
-
 void close(Game *game) 
 {
     destroyTankInstance(game->tank);
