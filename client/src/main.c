@@ -21,6 +21,7 @@
 
 #define WINDOW_WIDTH 800
 #define WINDOW_HEIGHT 600
+#define MAXTANKS 4
 #define SPEED 100
 #define SERVER_PORT 12345
 
@@ -62,6 +63,7 @@ typedef struct {
     UDPpacket *pPacket;
     int playerNumber; 
     int tankColorId;
+    char ipAddress[64];
     Wall* topLeft;
     Wall* topRight;
     Wall* bottomLeft;
@@ -70,9 +72,10 @@ typedef struct {
 } Game;
 
 void initiate(Game* game);
-bool connectToServer(Game* game, bool *timedOut);
+bool connectToServer(Game* game, const char* ip, bool *timedOut);
 void run(Game* game);
 void runMainMenu(Game* game);
+void enterServerIp(Game* game);
 void selectTank(Game* game);
 void loadSelectedTankTexture(Game* game);
 void close(Game* game);
@@ -135,7 +138,7 @@ void initiate(Game *game)
     game->tankColorId = 0;
 }
 
-bool connectToServer(Game* game, bool *timedOut) {
+bool connectToServer(Game* game, const char* ip, bool *timedOut) {
     *timedOut = false;
 
     if (SDLNet_Init() != 0) {
@@ -150,8 +153,8 @@ bool connectToServer(Game* game, bool *timedOut) {
         return false;
     }
 
-    if (SDLNet_ResolveHost(&game->serverAddress, "127.0.0.1", SERVER_PORT) != 0) {
-        SDL_Log("SDLNet_ResolveHost failed: %s", SDLNet_GetError());
+    if (SDLNet_ResolveHost(&game->serverAddress, ip, SERVER_PORT) != 0) {
+        SDL_Log("SDLNet_ResolveHost failed for %s: %s", ip, SDLNet_GetError());
         SDLNet_UDP_Close(game->pSocket);
         SDLNet_Quit();
         return false;
@@ -184,8 +187,6 @@ bool connectToServer(Game* game, bool *timedOut) {
         SDLNet_FreePacket(game->pPacket);
         SDLNet_UDP_Close(game->pSocket);
         SDLNet_Quit();
-        game->pPacket = NULL;
-        game->pSocket = NULL;
         return false;
     }
 
@@ -203,10 +204,55 @@ bool connectToServer(Game* game, bool *timedOut) {
     SDLNet_FreePacket(game->pPacket);
     SDLNet_UDP_Close(game->pSocket);
     SDLNet_Quit();
-    game->pPacket = NULL;
-    game->pSocket = NULL;
     return false;
 }
+
+
+void enterServerIp(Game* game) {
+    SDL_StartTextInput();
+    SDL_Texture* background = IMG_LoadTexture(game->pRenderer, "../lib/resources/selTankBg.png");
+    
+    char inputBuffer[64] = "";
+    bool entering = true;
+
+    while (entering) {
+        while (SDL_PollEvent(&game->event)) {
+            if (game->event.type == SDL_QUIT) {
+                game->state = STATE_EXIT;
+                entering = false;
+            } else if (game->event.type == SDL_TEXTINPUT) {
+                if (strlen(inputBuffer) + strlen(game->event.text.text) < 63) {
+                    strcat(inputBuffer, game->event.text.text);
+                }
+            } else if (game->event.type == SDL_KEYDOWN) {
+                if (game->event.key.keysym.sym == SDLK_BACKSPACE && strlen(inputBuffer) > 0) {
+                    inputBuffer[strlen(inputBuffer) - 1] = '\0';
+                } else if (game->event.key.keysym.sym == SDLK_RETURN) {
+                    strncpy(game->ipAddress, inputBuffer, sizeof(game->ipAddress));
+                    entering = false;
+                } else if (game->event.key.keysym.sym == SDLK_ESCAPE) {
+                    entering = false;
+                }
+            }
+        }
+
+            SDL_RenderClear(game->pRenderer); // först rensa
+            SDL_RenderCopy(game->pRenderer, background, NULL, NULL); // sen rita bilden
+
+            SDL_Color white = {255, 255, 255, 255};
+            renderText(game->pRenderer, "Skriv IP och tryck ENTER:", 175, 100, white);
+            renderText(game->pRenderer, inputBuffer, 175, 150, white);
+
+            SDL_RenderPresent(game->pRenderer);
+            SDL_Delay(16);
+
+    }
+
+    SDL_StopTextInput();
+    SDL_DestroyTexture(background);
+
+}
+
 
 DialogResult showErrorDialog(Game* game, const char* title, const char* message) {
     TTF_Font* font = TTF_OpenFont("../lib/resources/Orbitron-Bold.ttf", 24);
@@ -357,11 +403,12 @@ void runMainMenu(Game* game) {
                     game->state = STATE_RUNNING;
                     inMenu = false;
                 } else if (SDL_PointInRect(&(SDL_Point){x, y}, &rectConnect)) {
+                    enterServerIp(game);
                     bool tryConnect = true;
 
                     while (tryConnect) {
                         bool timedOut = false;
-                        if (connectToServer(game, &timedOut)) {
+                        if (connectToServer(game, game->ipAddress, &timedOut)) {
                             loadSelectedTankTexture(game);
                             game->state = STATE_RUNNING;
                             inMenu = false;
@@ -369,6 +416,7 @@ void runMainMenu(Game* game) {
                         } else {
                             DialogResult result = showErrorDialog(game, "ERROR", timedOut ? "Kunde inte ansluta till servern." : "Kunde inte ansluta till servern.");
                             if (result == DIALOG_RESULT_TRY_AGAIN) {
+                                enterServerIp(game);
                                 tryConnect = true;  
                             } else {
                                 tryConnect = false; 
@@ -585,12 +633,11 @@ void run(Game *game)
 void selectTank(Game* game) {
     bool selecting = true;
     int currentSelection = 0;
-    const int maxTanks = 4;
 
     SDL_Texture* background = IMG_LoadTexture(game->pRenderer, "../lib/resources/selTankBg.png");
 
-    SDL_Texture* tanks[maxTanks];
-    const char* tankNames[maxTanks] = {"Ironclad", "Blockbuster", "Ghost Walker", "Shadow Reaper"};
+    SDL_Texture* tanks[MAXTANKS];
+    const char* tankNames[MAXTANKS] = {"Ironclad", "Blockbuster", "Ghost Walker", "Shadow Reaper"};
     tanks[0] = IMG_LoadTexture(game->pRenderer, "../lib/resources/tank.png");
     tanks[1] = IMG_LoadTexture(game->pRenderer, "../lib/resources/tank_lego.png");
     tanks[2] = IMG_LoadTexture(game->pRenderer, "../lib/resources/tank_light.png");
@@ -616,10 +663,10 @@ void selectTank(Game* game) {
             } else if (game->event.type == SDL_KEYDOWN) {
                 switch (game->event.key.keysym.sym) {
                     case SDLK_LEFT:
-                        currentSelection = (currentSelection - 1 + maxTanks) % maxTanks;
+                        currentSelection = (currentSelection - 1 + MAXTANKS) % MAXTANKS;
                         break;
                     case SDLK_RIGHT:
-                        currentSelection = (currentSelection + 1) % maxTanks;
+                        currentSelection = (currentSelection + 1) % MAXTANKS;
                         break;
                     case SDLK_RETURN:
                         game->tankColorId = currentSelection;
@@ -664,7 +711,7 @@ void selectTank(Game* game) {
         SDL_Delay(16);
     }
 
-    for (int i = 0; i < maxTanks; i++) {
+    for (int i = 0; i < MAXTANKS; i++) {
         SDL_DestroyTexture(tanks[i]);
     }
     SDL_DestroyTexture(background);
