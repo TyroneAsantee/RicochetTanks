@@ -1,9 +1,9 @@
 CC = gcc
 
 CFLAGS = -Wall -Wextra \
-    -I../lib/include \
-    -I/usr/local/include/SDL2 \
-    -D_THREAD_SAFE
+         -std=c11 \
+         -I../lib/include \
+         -D_THREAD_SAFE
 
 LDFLAGS = -L/usr/local/lib -lSDL2 -lSDL2_image -lSDL2_net -lSDL2_ttf
 

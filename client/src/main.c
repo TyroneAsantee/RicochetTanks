@@ -9,6 +9,7 @@
 #include "bullet.h"
 #include "collision.h"
 #include "text.h"
+#include "wall.h"
 
 #ifdef _WIN32
 #include <SDL2/SDL_main.h>
@@ -61,6 +62,10 @@ typedef struct {
     UDPpacket *pPacket;
     int playerNumber; 
     int tankColorId;
+    Wall* topLeft;
+    Wall* topRight;
+    Wall* bottomLeft;
+    Wall* bottomRight;
     GameState state;
 } Game;
 
@@ -408,6 +413,13 @@ void run(Game *game)
     float shipVelocityY = 0;
     bool closeWindow = false;
     bool up = false, down = false;
+    int thickness = 20;
+    int length = 80;
+
+    game->topLeft = createWall(100, 100, thickness, length, WALL_TOP_LEFT);
+    game->topRight = createWall(WINDOW_WIDTH - 100 - length, 100, thickness, length, WALL_TOP_RIGHT);
+    game->bottomLeft = createWall(100, WINDOW_HEIGHT - 100 - length, thickness, length, WALL_BOTTOM_LEFT);
+    game->bottomRight = createWall(WINDOW_WIDTH - 100 - length, WINDOW_HEIGHT - 100 - length, thickness, length, WALL_BOTTOM_RIGHT);
 
     while (!closeWindow) {
         update_timer(&game->timer);
@@ -489,8 +501,24 @@ void run(Game *game)
             shipVelocityY = -sin(radians) * SPEED;
         }
 
-        shipX += shipVelocityX * dt;
-        shipY += shipVelocityY * dt;
+        SDL_Rect futureTank = getTankRect(game->tank);
+        futureTank.x = (int)(shipX + shipVelocityX * dt);
+        futureTank.y = (int)(shipY + shipVelocityY * dt);
+
+        if (!wallCheckCollision(game->topLeft, &futureTank) &&
+            !wallCheckCollision(game->topRight, &futureTank) &&
+            !wallCheckCollision(game->bottomLeft, &futureTank) &&
+            !wallCheckCollision(game->bottomRight, &futureTank)) 
+        {
+            shipX += shipVelocityX * dt;
+            shipY += shipVelocityY * dt;
+        }
+
+        if (shipX < 0) shipX = 0;
+        if (shipY < 0) shipY = 0;
+        if (shipX > WINDOW_WIDTH - tankRect.w) shipX = WINDOW_WIDTH - tankRect.w;
+        if (shipY > WINDOW_HEIGHT - tankRect.h) shipY = WINDOW_HEIGHT - tankRect.h;
+
         if (shipX < 0) shipX = 0;
         if (shipY < 0) shipY = 0;
         if (shipX > WINDOW_WIDTH - tankRect.w) shipX = WINDOW_WIDTH - tankRect.w;
@@ -502,6 +530,12 @@ void run(Game *game)
         SDL_RenderClear(game->pRenderer);
         SDL_RenderCopy(game->pRenderer, game->pBackground, NULL, NULL);
 
+        renderWall(game->pRenderer, game->topLeft);
+        renderWall(game->pRenderer, game->topRight);
+        renderWall(game->pRenderer, game->bottomLeft);
+        renderWall(game->pRenderer, game->bottomRight);
+
+
         if (isTankAlive(game->tank)) {
             drawTank(game->pRenderer, game->tank, game->pTankpicture);
             renderTankHealth(game->pRenderer, 3);  // Du kan byta ut 3 mot en getter vid behov
@@ -509,6 +543,28 @@ void run(Game *game)
 
         for (int i = 0; i < MAX_BULLETS; i++) {
             updateBullet(&game->bullets[i], dt);
+            if (game->bullets[i].active) {
+                SDL_Rect bulletRect = {
+                    (int)game->bullets[i].rect.x,
+                    (int)game->bullets[i].rect.y,
+                    (int)game->bullets[i].rect.w,
+                    (int)game->bullets[i].rect.h
+                };
+
+                if (wallCheckCollision(game->topLeft, &bulletRect) ||
+                    wallCheckCollision(game->bottomLeft, &bulletRect) ||
+                    wallCheckCollision(game->topRight, &bulletRect) ||
+                    wallCheckCollision(game->bottomRight, &bulletRect)) {
+
+                    // Invertera riktning
+                    if (wallHitsVertical(game->topLeft, game->topRight, game->bottomLeft, game->bottomRight, &bulletRect)) {
+                        game->bullets[i].velocityX *= -1;
+                    }
+                    if (wallHitsHorizontal(game->topLeft, game->topRight, game->bottomLeft, game->bottomRight, &bulletRect)) {
+                        game->bullets[i].velocityY *= -1;
+                    }
+                }
+            }
 
             SDL_Rect tankRect = getTankRect(game->tank);
             SDL_FRect bulletRect = game->bullets[i].rect;
@@ -666,6 +722,10 @@ void close(Game *game)
     destroyTank();
     destroyBulletTexture();
     destroyHeartTexture();
+    destroyWall(game->topLeft);
+    destroyWall(game->topRight);
+    destroyWall(game->bottomLeft);
+    destroyWall(game->bottomRight);
     SDL_DestroyTexture(game->pTankpicture);
     SDL_DestroyTexture(game->pBackground);
     SDL_DestroyRenderer(game->pRenderer);
