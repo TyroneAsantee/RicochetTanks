@@ -483,14 +483,21 @@ void run(Game *game)
                 case SDL_KEYDOWN:
                     switch (game->event.key.keysym.scancode) {
                         case SDL_SCANCODE_SPACE:
-                            for (int i = 0; i < MAX_BULLETS; i++) {
-                                if (!game->bullets[i].active) {
-                                    fireBullet(&game->bullets[i],
-                                        shipX + tankRect.w / 2,
-                                        shipY + tankRect.h / 2,
-                                        angle,
-                                        0);
-                                    break;
+                            game->bulletstopper = 0;
+                            if(game->bulletstopper == 0)
+                            {
+                                if(SDL_GetTicks() - game->lastshottime > 200)
+                                {
+                                    for(int i = 0;i < MAX_BULLETS;i++)
+                                    {
+                                        if(!game->bullets[i].active)
+                                        {
+                                            fireBullet(&game->bullets[i], shipX + tankRect.w / 2, shipY + tankRect.h / 2, angle, 0);
+                                            game->lastshottime = SDL_GetTicks();
+                                            break;
+                                        }
+                                    }
+                                    game->bulletstopper = 1;
                                 }
                             }
                             break;
