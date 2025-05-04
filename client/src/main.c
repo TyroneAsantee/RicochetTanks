@@ -10,6 +10,7 @@
 #include "collision.h"
 #include "text.h"
 #include "wall.h"
+#include "server.h"
 
 
 #ifdef _WIN32
@@ -55,7 +56,6 @@ typedef struct {
    ClientCommand command;
    int playerNumber;
 } ClientData;
-
 
 typedef struct {
    SDL_Window *pWindow;
@@ -514,10 +514,9 @@ void runMainMenu(Game* game) {
                             inMenu = false;
                             tryConnect = false;
                         } else {
-                            DialogResult result = showErrorDialog(game, "ERROR", timedOut ? "Could not connect to server." : "Could not connect to server.");
+                            DialogResult result = showErrorDialog(game, "ERROR", timedOut ? "Could not connect to server." : "Connection failed.");
                             if (result == DIALOG_RESULT_TRY_AGAIN) {
                                 enterServerIp(game);
-                                tryConnect = true;
                             } else {
                                 tryConnect = false;
                             }
@@ -729,7 +728,7 @@ void run(Game *game)
 
         if (isTankAlive(game->tank)) {
             drawTank(game->pRenderer, game->tank, game->pTankpicture);
-            renderTankHealth(game->pRenderer, 3);
+            renderTankHealth(game->pRenderer, getTankHealth(game->tank));
         }
 
         for (int i = 0; i < MAX_BULLETS; i++) {
@@ -758,8 +757,11 @@ void run(Game *game)
                 SDL_Rect tankRect = getTankRect(game->tank);
                 SDL_FRect bulletFRect = game->bullets[i].rect;
 
-                if (game->bullets[i].ownerId != 0 && checkCollision(&tankRect, &bulletFRect)) {
+                if (game->bullets[i].ownerId != game->playerNumber && checkCollision(&tankRect, &bulletFRect)) {
                     game->bullets[i].active = false;
+                    // Här kan du också lägga till logik för att ta skada:
+                    int currentHP = getTankHealth(game->tank);
+                    setTankHealth(game->tank, currentHP - 1);
                 }
             }
             renderBullet(game->pRenderer, &game->bullets[i]);
@@ -846,25 +848,19 @@ void selectTank(Game* game) {
            }
        }
 
-
        SDL_RenderCopy(game->pRenderer, background, NULL, NULL);
-
 
        SDL_Color white = {255, 255, 255, 255};
        renderText(game->pRenderer, tankNames[currentSelection], (WINDOW_WIDTH / 2) - 100, 50, white);
 
-
        SDL_Color gray = {180, 180, 180, 255};
        renderText(game->pRenderer, "Press ENTER to choose", (WINDOW_WIDTH / 2) - 200, 100, gray);
 
-
        SDL_RenderCopyEx(game->pRenderer, tanks[currentSelection], NULL, &tankRect, angle, NULL, SDL_FLIP_NONE);
-
 
        SDL_RenderPresent(game->pRenderer);
        SDL_Delay(16);
    }
-
 
    for (int i = 0; i < MAXTANKS; i++) {
        SDL_DestroyTexture(tanks[i]);
@@ -905,22 +901,16 @@ bool waitForServerResponse(Game *game, Uint32 timeout_ms) {
        printf("SDLNet_AllocSocketSet: %s\n", SDLNet_GetError());
        return false;
    }
-
-
    SDLNet_UDP_AddSocket(socketSet, game->pSocket);
-
 
    int numready = SDLNet_CheckSockets(socketSet, timeout_ms);
 
-
    SDLNet_FreeSocketSet(socketSet);
-
 
    if (numready == -1) {
        printf("SDLNet_CheckSockets error: %s\n", SDLNet_GetError());
        return false;
    }
-
 
    return numready > 0;
 }

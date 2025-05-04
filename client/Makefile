@@ -1,29 +1,17 @@
 CC = gcc
-
-CFLAGS = -Wall -Wextra -std=c11 \
-    -I../lib/include \
-    -I/usr/local/include \
-    -D_THREAD_SAFE
-
-LDFLAGS = -L../lib/src \
-    -L/usr/local/lib \
-    -lSDL2 -lSDL2_image -lSDL2_net -lSDL2_ttf
-
-SRC = src/main.c \
-      ../lib/src/tank.c \
-      ../lib/src/timer.c \
-      ../lib/src/bullet.c \
-      ../lib/src/collision.c \
-      ../lib/src/text.c \
-      ../lib/src/wall.c
-
+CFLAGS = -Wall -Wextra -I../lib/include `sdl2-config --cflags`
+LDFLAGS = `sdl2-config --libs` -lSDL2_image -lSDL2_net -lSDL2_ttf
+SRC = $(wildcard ../lib/src/*.c)
 OBJ = $(SRC:.c=.o)
-EXEC = spel
+TARGET = spel
 
-all: $(EXEC)
+all: $(TARGET)
 
-$(EXEC): $(OBJ)
-	$(CC) $(OBJ) -o $@ $(LDFLAGS)
+$(TARGET): main.o $(OBJ)
+	$(CC) -o $@ $^ $(LDFLAGS)
+
+main.o: src/main.c
+	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-	rm -f $(OBJ) $(EXEC)
+	rm -f $(TARGET) main.o ../lib/src/*.o

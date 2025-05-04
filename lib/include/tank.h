@@ -18,6 +18,7 @@ void setTankPosition(Tank* tank, int x, int y);
 void setTankAngle(Tank* tank, float angle);
 void setTankHealth(Tank* tank, int health);
 bool isTankAlive(Tank* tank);
+int getTankHealth(const Tank* tank);
 
 SDL_Rect getTankRect(Tank* tank);
 float getTankAngle(Tank* tank);

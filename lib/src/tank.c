@@ -59,6 +59,10 @@ bool isTankAlive(Tank* tank) {
     return tank ? tank->alive : false;
 }
 
+int getTankHealth(const Tank* tank) {
+    return tank->health;
+}
+
 SDL_Rect getTankRect(Tank* tank) {
     if (tank) return tank->rect;
     return (SDL_Rect){0, 0, 0, 0};
