@@ -367,7 +367,7 @@ void runMainMenu(Game* game) {
                             inMenu = false;
                             tryConnect = false;
                         } else {
-                            DialogResult result = showErrorDialog(game, "ERROR", timedOut ? "Kunde inte ansluta till servern." : "Kunde inte ansluta till servern.");
+                            DialogResult result = showErrorDialog(game, "ERROR", timedOut ? "Could not connect to server." : "Could not connect to server.");
                             if (result == DIALOG_RESULT_TRY_AGAIN) {
                                 tryConnect = true;  
                             } else {
@@ -556,7 +556,6 @@ void run(Game *game)
                     wallCheckCollision(game->topRight, &bulletRect) ||
                     wallCheckCollision(game->bottomRight, &bulletRect)) {
 
-                    // Invertera riktning
                     if (wallHitsVertical(game->topLeft, game->topRight, game->bottomLeft, game->bottomRight, &bulletRect)) {
                         game->bullets[i].velocityX *= -1;
                     }
