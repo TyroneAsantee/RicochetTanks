@@ -22,7 +22,7 @@ endif
 TARGET = spel
 
 # Object files
-OBJECTS = main.o tank.o bullet.o collision.o timer.o text.o wall.o
+OBJECTS = main.o tank.o bullet.o collision.o timer.o text.o wall.o server.o
 
 # Default target
 all: $(TARGET)
@@ -58,6 +58,8 @@ text.o: $(COMMONSRCDIR)/text.c $(INCDIR)/text.h
 wall.o: $(COMMONSRCDIR)/wall.c $(INCDIR)/wall.h
 	$(CC) $(CFLAGS) $(COMMONSRCDIR)/wall.c
 
+server.o: $(COMMONSRCDIR)/server.c $(INCDIR)/server.h $(INCDIR)/tank.h
+	$(CC) $(CFLAGS) $(COMMONSRCDIR)/server.c
 
 # Clean up object files and executable
 clean:

@@ -10,6 +10,7 @@
 #include "collision.h"
 #include "text.h"
 #include "wall.h"
+#include "server.h"
 
 
 #ifdef _WIN32
@@ -29,7 +30,6 @@
 #define SERVER_PORT 12345
 #define MAX_PLAYERS 4
 volatile int connectedPlayers = 1;
-
 
 typedef enum {
    CONNECT, 
@@ -56,7 +56,6 @@ typedef struct {
    ClientCommand command;
    int playerNumber;
 } ClientData;
-
 
 typedef struct {
    SDL_Window *pWindow;
@@ -463,16 +462,12 @@ void runMainMenu(Game* game) {
                int x = game->event.button.x;
                int y = game->event.button.y;
 
-
                if (SDL_PointInRect(&(SDL_Point){x, y}, &rectHost)) {
-                   SDLNet_Init();
-                   connectedPlayers = 1; // hosten själv
-                   SDL_CreateThread(runAsServerThread, "ServerThread", NULL);
-
+                connectedPlayers = 1; // hosten själv
+                SDL_CreateThread(serverThread, "ServerThread", NULL);
 
                    SDL_Texture* bgWait = IMG_LoadTexture(game->pRenderer, "../lib/resources/menu_bg.png");
                    bool waiting = true;
-
 
                    while (waiting && connectedPlayers < MAX_PLAYERS) {
                        while (SDL_PollEvent(&game->event)) {
@@ -504,7 +499,6 @@ void runMainMenu(Game* game) {
                        SDL_Delay(100);
                    }
 
-
                    SDL_DestroyTexture(bgWait);
 
 
@@ -516,7 +510,6 @@ void runMainMenu(Game* game) {
                        connectedPlayers = 0;
                        SDLNet_Quit();
                    }
-
 
                } else if (SDL_PointInRect(&(SDL_Point){x, y}, &rectConnect)) {
                    enterServerIp(game);
@@ -540,7 +533,6 @@ void runMainMenu(Game* game) {
                            }
                        }
                    }
-
 
                } else if (SDL_PointInRect(&(SDL_Point){x, y}, &rectSelectTank)) {
                    game->state = STATE_SELECT_TANK;
@@ -570,60 +562,8 @@ void runMainMenu(Game* game) {
    SDL_DestroyTexture(btnConnect);
    SDL_DestroyTexture(btnSelectTank);
    SDL_DestroyTexture(btnExit);
-}
 
-
-
-
-int runAsServerThread(void* data) {
-   UDPsocket serverSocket = SDLNet_UDP_Open(SERVER_PORT);
-   if (!serverSocket) {
-       SDL_Log("Could not open UDP socket: %s", SDLNet_GetError());
-       return -1;
-   }
-
-
-   UDPpacket* packet = SDLNet_AllocPacket(512);
-   if (!packet) {
-       SDL_Log("Could not allocate packet: %s", SDLNet_GetError());
-       SDLNet_UDP_Close(serverSocket);
-       return -1;
-   }
-
-
-   int playerNumber = 1;
-
-
-   while (connectedPlayers < MAX_PLAYERS) {
-       if (SDLNet_UDP_Recv(serverSocket, packet)) {
-           ClientData request;
-           memcpy(&request, packet->data, sizeof(ClientData));
-
-
-           if (request.command == CONNECT) {
-               ClientData response;
-               response.command = CONNECT;
-               response.playerNumber = playerNumber++;
-
-
-               memcpy(packet->data, &response, sizeof(ClientData));
-               packet->len = sizeof(ClientData);
-               SDLNet_UDP_Send(serverSocket, -1, packet);
-
-
-               SDL_Log("Spelare %d ansluten", response.playerNumber);
-               connectedPlayers++;
-           }
-       }
-       SDL_Delay(10);
-   }
-
-
-   SDLNet_FreePacket(packet);
-   SDLNet_UDP_Close(serverSocket);
-   return 0;
-}
-
+} 
 
 void run(Game *game)
 {
@@ -637,6 +577,7 @@ void run(Game *game)
    bool up = false, down = false;
    int thickness = 20;
    int length = 80;
+   bool shoot = false;
 
 
    game->topLeft = createWall(100, 100, thickness, length, WALL_TOP_LEFT);
