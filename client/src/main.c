@@ -1,7 +1,7 @@
-#include <SDL2/SDL.h>
-#include <SDL2/SDL_image.h>
-#include <SDL2/SDL_net.h>
-#include <SDL2/SDL_ttf.h>
+#include <SDL.h>
+#include <SDL_image.h>
+#include <SDL_net.h>
+#include <SDL_ttf.h>
 #include <stdbool.h>
 #include <math.h>
 #include "tank.h"
@@ -495,9 +495,9 @@ void runMainMenu(Game* game) {
 
                        SDL_Color white = {255, 255, 255, 255};
                        char statusText[64];
-                       snprintf(statusText, sizeof(statusText), "Väntar på spelare... %d/%d inne", connectedPlayers, MAX_PLAYERS);
+                       snprintf(statusText, sizeof(statusText), "Waiting for players... %d/%d players", connectedPlayers, MAX_PLAYERS);
                        renderText(game->pRenderer, statusText, 200, 300, white);
-                       renderText(game->pRenderer, "Tryck ESC för att avbryta", 200, 360, white);
+                       renderText(game->pRenderer, "Press ESC to cancel", 200, 360, white);
 
 
                        SDL_RenderPresent(game->pRenderer);
@@ -531,7 +531,7 @@ void runMainMenu(Game* game) {
                            inMenu = false;
                            tryConnect = false;
                        } else {
-                           DialogResult result = showErrorDialog(game, "ERROR", timedOut ? "Kunde inte ansluta till servern." : "Kunde inte ansluta till servern.");
+                           DialogResult result = showErrorDialog(game, "ERROR", timedOut ? "Could not connect to server." : "Could not connect to server.");
                            if (result == DIALOG_RESULT_TRY_AGAIN) {
                                enterServerIp(game);
                                tryConnect = true;
