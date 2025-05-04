@@ -1,7 +1,9 @@
 #ifndef WALL_H
 #define WALL_H
 
-#include <SDL.h>
+#include <SDL2/SDL.h>
+#include <stdlib.h>
+#include <stdbool.h>
 
 typedef enum {
     WALL_TOP_LEFT,

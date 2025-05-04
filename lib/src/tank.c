@@ -1,8 +1,3 @@
-#include <SDL.h>
-#include <SDL_image.h>
-#include <stdbool.h>
-#include <math.h>
-#include <stdlib.h>
 #include "tank.h"
 #include "timer.h"
 

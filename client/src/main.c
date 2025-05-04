@@ -1,7 +1,7 @@
-#include <SDL.h>
-#include <SDL_image.h>
-#include <SDL_net.h>
-#include <SDL_ttf.h>
+#include <SDL2/SDL.h>
+#include <SDL2/SDL_image.h>
+#include <SDL2/SDL_net.h>
+#include <SDL2/SDL_ttf.h>
 #include <stdbool.h>
 #include <math.h>
 #include "tank.h"
@@ -29,7 +29,6 @@
 #define SERVER_PORT 12345
 #define MAX_PLAYERS 4
 volatile int connectedPlayers = 1;
-
 
 typedef enum {
    CONNECT, 
@@ -472,8 +471,8 @@ void runMainMenu(Game* game) {
                         while (SDL_PollEvent(&game->event)) {
                             if (game->event.type == SDL_QUIT || 
                                 (game->event.type == SDL_KEYDOWN && game->event.key.keysym.sym == SDLK_ESCAPE)) {
-                                game->state = STATE_EXIT;
-                                inMenu = false;
+                                game->state = STATE_MENU;
+                                inMenu = true;
                                 waiting = false;
                                 break;
                             }
@@ -555,15 +554,12 @@ void runMainMenu(Game* game) {
 }
 
 
-
-
 int runAsServerThread(void* data) {
    UDPsocket serverSocket = SDLNet_UDP_Open(SERVER_PORT);
    if (!serverSocket) {
        SDL_Log("Could not open UDP socket: %s", SDLNet_GetError());
        return -1;
    }
-
 
    UDPpacket* packet = SDLNet_AllocPacket(512);
    if (!packet) {
@@ -572,37 +568,35 @@ int runAsServerThread(void* data) {
        return -1;
    }
 
-
    int playerNumber = 1;
 
+    while (connectedPlayers < MAX_PLAYERS) {
+        if (SDLNet_UDP_Recv(serverSocket, packet)) {
+            ClientData request;
+            memcpy(&request, packet->data, sizeof(ClientData));
 
-   while (connectedPlayers < MAX_PLAYERS) {
-       if (SDLNet_UDP_Recv(serverSocket, packet)) {
-           ClientData request;
-           memcpy(&request, packet->data, sizeof(ClientData));
+            if (request.command == CONNECT) {
+                ClientData response;
+                response.command = CONNECT;
+                response.playerNumber = playerNumber++;
 
+                memcpy(packet->data, &response, sizeof(ClientData));
+                packet->len = sizeof(ClientData);
+                SDLNet_UDP_Send(serverSocket, -1, packet);
 
-           if (request.command == CONNECT) {
-               ClientData response;
-               response.command = CONNECT;
-               response.playerNumber = playerNumber++;
+                SDL_Log("Player %d connected", response.playerNumber);
+                connectedPlayers++;
+            }
+        }
+        SDL_Delay(10);
+    }
 
-
-               memcpy(packet->data, &response, sizeof(ClientData));
-               packet->len = sizeof(ClientData);
-               SDLNet_UDP_Send(serverSocket, -1, packet);
-
-
-               SDL_Log("Player %d connected", response.playerNumber);
-               connectedPlayers++;
-           }
-       }
-       SDL_Delay(10);
-   }
-
-
-   SDLNet_FreePacket(packet);
-   SDLNet_UDP_Close(serverSocket);
+   if (packet != NULL) {
+    SDLNet_FreePacket(packet);
+    }
+    if (serverSocket != NULL) {
+        SDLNet_UDP_Close(serverSocket);
+    }
    return 0;
 }
 
@@ -933,30 +927,40 @@ bool waitForServerResponse(Game *game, Uint32 timeout_ms) {
 
 void close(Game *game)
 {
-   destroyTankInstance(game->tank);
-   destroyTank();
-   destroyBulletTexture();
-   destroyHeartTexture();
-   destroyWall(game->topLeft);
-   destroyWall(game->topRight);
-   destroyWall(game->bottomLeft);
-   destroyWall(game->bottomRight);
-   SDL_DestroyTexture(game->pTankpicture);
-   SDL_DestroyTexture(game->pBackground);
-   SDL_DestroyRenderer(game->pRenderer);
-   SDL_DestroyWindow(game->pWindow);
-   if (game->pPacket != NULL) {
-       SDLNet_FreePacket(game->pPacket);
-       game->pPacket = NULL;
-   }
-   if (game->pSocket != NULL) {
-       SDLNet_UDP_Close(game->pSocket);
-       game->pSocket = NULL;
-   }
-   closeTextSystem();
-   SDLNet_Quit();
-   IMG_Quit();
-   TTF_Quit();
-   SDL_Quit();
-}
+    if (game->tank) destroyTankInstance(game->tank);
+    destroyTank();
+    destroyBulletTexture();
+    destroyHeartTexture();
+    destroyWall(game->topLeft);
+    destroyWall(game->topRight);
+    destroyWall(game->bottomLeft);
+    destroyWall(game->bottomRight);
 
+    if (game->pTankpicture != NULL) {
+        SDL_DestroyTexture(game->pTankpicture);
+        game->pTankpicture = NULL;
+    }
+
+    if (game->pBackground != NULL) {
+        SDL_DestroyTexture(game->pBackground);
+        game->pBackground = NULL;
+    }
+
+    if (game->pRenderer != NULL) SDL_DestroyRenderer(game->pRenderer);
+    if (game->pWindow != NULL) SDL_DestroyWindow(game->pWindow);
+
+    if (game->pPacket != NULL) {
+        SDLNet_FreePacket(game->pPacket);
+        game->pPacket = NULL;
+    }
+    if (game->pSocket != NULL) {
+        SDLNet_UDP_Close(game->pSocket);
+        game->pSocket = NULL;
+    }
+
+    closeTextSystem();
+    SDLNet_Quit();
+    IMG_Quit();
+    TTF_Quit();
+    SDL_Quit();
+}

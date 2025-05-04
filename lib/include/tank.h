@@ -1,8 +1,11 @@
 #ifndef TANK_H
 #define TANK_H
 
-#include <SDL.h>
+#include <SDL2/SDL.h>
 #include <stdbool.h>
+#include <SDL2/SDL_image.h>
+#include <math.h>
+#include <stdlib.h>
 
 #define SPEED 100
 

@@ -1,65 +1,29 @@
-UNAME := $(shell uname 2>/dev/null || echo Windows)
-
-SRCDIR = ./src
-COMMONSRCDIR = ../lib/src
-INCDIR = ../lib/include
-
 CC = gcc
 
-ifeq ($(UNAME), Darwin)  # macOS
-    INCLUDE = -I/opt/homebrew/include/SDL2 -I$(INCDIR)
-    CFLAGS = -g $(INCLUDE) -c
-    LDFLAGS = -L/opt/homebrew/lib -lSDL2 -lSDL2_image -lSDL2_net -lSDL2_ttf
-    RM = rm -f
-else  # Windows
-    INCLUDE = -IC:/msys64/mingw64/include/SDL2 -I"$(INCDIR)"
-    CFLAGS = -g $(INCLUDE) -c
-    LDFLAGS = -LC:/msys64/mingw64/lib -lmingw32 -lSDL2main -lSDL2 -lSDL2_image -lSDL2_net -lSDL2_ttf -mwindows
-    RM = cmd.exe /C del /Q
-endif
+CFLAGS = -Wall -Wextra -std=c11 \
+    -I../lib/include \
+    -I/usr/local/include \
+    -D_THREAD_SAFE
 
-# Target executable
-TARGET = spel
+LDFLAGS = -L../lib/src \
+    -L/usr/local/lib \
+    -lSDL2 -lSDL2_image -lSDL2_net -lSDL2_ttf
 
-# Object files
-OBJECTS = main.o tank.o bullet.o collision.o timer.o text.o wall.o
+SRC = src/main.c \
+      ../lib/src/tank.c \
+      ../lib/src/timer.c \
+      ../lib/src/bullet.c \
+      ../lib/src/collision.c \
+      ../lib/src/text.c \
+      ../lib/src/wall.c
 
-# Default target
-all: $(TARGET)
+OBJ = $(SRC:.c=.o)
+EXEC = spel
 
-# Link object files to create the executable
-$(TARGET): $(OBJECTS)
-	$(CC) -o "$(TARGET)" $(OBJECTS) $(LDFLAGS)
+all: $(EXEC)
 
-# Compile main.c (client-specific)
-main.o: $(SRCDIR)/main.c $(INCDIR)/tank.h $(INCDIR)/bullet.h $(INCDIR)/collision.h $(INCDIR)/timer.h
-	$(CC) $(CFLAGS) $(SRCDIR)/main.c
+$(EXEC): $(OBJ)
+	$(CC) $(OBJ) -o $@ $(LDFLAGS)
 
-# Compile tank.c (shared code)
-tank.o: $(COMMONSRCDIR)/tank.c $(INCDIR)/tank.h
-	$(CC) $(CFLAGS) $(COMMONSRCDIR)/tank.c
-
-# Compile bullet.c (shared code)
-bullet.o: $(COMMONSRCDIR)/bullet.c $(INCDIR)/bullet.h $(INCDIR)/tank.h
-	$(CC) $(CFLAGS) $(COMMONSRCDIR)/bullet.c
-
-# Compile collision.c (shared code)
-collision.o: $(COMMONSRCDIR)/collision.c $(INCDIR)/collision.h
-	$(CC) $(CFLAGS) $(COMMONSRCDIR)/collision.c
-
-# Compile timer.c (shared code)
-timer.o: $(COMMONSRCDIR)/timer.c $(INCDIR)/timer.h
-	$(CC) $(CFLAGS) $(COMMONSRCDIR)/timer.c
-
-# Compile text.c (shared code)
-text.o: $(COMMONSRCDIR)/text.c $(INCDIR)/text.h
-	$(CC) $(CFLAGS) $(COMMONSRCDIR)/text.c
-
-wall.o: $(COMMONSRCDIR)/wall.c $(INCDIR)/wall.h
-	$(CC) $(CFLAGS) $(COMMONSRCDIR)/wall.c
-
-
-# Clean up object files and executable
 clean:
-	cmd /C "if exist *.o del /Q *.o"
-	cmd /C "if exist spel.exe del /Q spel.exe"
+	rm -f $(OBJ) $(EXEC)
