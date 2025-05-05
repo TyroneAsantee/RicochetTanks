@@ -4,6 +4,8 @@
 #include <SDL2/SDL_ttf.h>
 #include <stdbool.h>
 #include <math.h>
+#include <unistd.h>      // gethostname
+#include <netdb.h>       // gethostbyname
 #include "tank.h"
 #include "timer.h"
 #include "bullet.h"
@@ -11,7 +13,9 @@
 #include "text.h"
 #include "wall.h"
 #include "server.h"
-
+#include "client.h"
+#include "network_protocol.h"
+#include "game.h"
 
 #ifdef _WIN32
 #include <SDL2/SDL_main.h>
@@ -22,7 +26,6 @@
 #define M_PI 3.14159265358979323846
 #endif
 
-
 #define WINDOW_WIDTH 800
 #define WINDOW_HEIGHT 600
 #define MAXTANKS 4
@@ -31,18 +34,8 @@
 #define MAX_PLAYERS 4
 volatile int connectedPlayers = 1;
 
-typedef enum {
-   CONNECT, 
-} ClientCommand;
 
 
-typedef enum
-{
-   STATE_MENU,
-   STATE_RUNNING,
-   STATE_SELECT_TANK,
-   STATE_EXIT
-} GameState;
 
 
 typedef enum {
@@ -52,45 +45,16 @@ typedef enum {
 } DialogResult;
 
 
-typedef struct {
-   ClientCommand command;
-   int playerNumber;
-} ClientData;
-
-typedef struct {
-   SDL_Window *pWindow;
-   SDL_Renderer *pRenderer;
-   SDL_Texture *pBackground;
-   SDL_Texture *pTankpicture;
-   SDL_Event event;
-   float angle;
-   Timer timer;
-   Tank* tank;
-   Bullet bullets[MAX_BULLETS];
-   UDPsocket pSocket;
-   IPaddress serverAddress;
-   UDPpacket *pPacket;
-   int playerNumber;
-   int tankColorId;
-   int bulletstopper;
-   int lastshottime;
-   char ipAddress[64];
-   Wall* topLeft;
-   Wall* topRight;
-   Wall* bottomLeft;
-   Wall* bottomRight;
-   GameState state;
-} Game;
-
 
 void initiate(Game* game);
+void getLocalIP(char* buffer, size_t size);
 bool connectToServer(Game* game, const char* ip, bool *timedOut);
 void run(Game* game);
 void runMainMenu(Game* game);
 void enterServerIp(Game* game);
 void selectTank(Game* game);
 void loadSelectedTankTexture(Game* game);
-void close(Game* game);
+void closeGame(Game* game);
 bool waitForServerResponse(Game *game, Uint32 timeout_ms);
 int runAsServerThread(void* data);
 DialogResult showErrorDialog(Game* game, const char* title, const char* message);
@@ -130,30 +94,24 @@ void initiate(Game *game)
    IMG_Init(IMG_INIT_PNG);
    TTF_Init();
 
-
    game->pWindow = SDL_CreateWindow("Ricochet Tank", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, WINDOW_WIDTH, WINDOW_HEIGHT, SDL_WINDOW_SHOWN);
    game->pRenderer = SDL_CreateRenderer(game->pWindow, -1, SDL_RENDERER_ACCELERATED);
-
 
    initTank(game->pRenderer);
    loadHeartTexture(game->pRenderer);
    loadBulletTexture(game->pRenderer);
    initTextSystem("../lib/resources/Orbitron-Bold.ttf", 32);
 
-
    SDL_Surface *bgSurface = IMG_Load("../lib/resources/background.png");
    game->pBackground = SDL_CreateTextureFromSurface(game->pRenderer, bgSurface);
    SDL_FreeSurface(bgSurface);
 
-
    initiate_timer(&game->timer);
-
 
    game->tank = createTank();
    setTankPosition(game->tank, 400, 300);
    setTankAngle(game->tank, 0);
    setTankHealth(game->tank, 3);
-
 
    game->state = STATE_MENU;
    game->pPacket = NULL;
@@ -161,88 +119,23 @@ void initiate(Game *game)
    game->tankColorId = 0;
 }
 
-
-bool connectToServer(Game* game, const char* ip, bool *timedOut) {
-   *timedOut = false;
-
-
-   if (SDLNet_Init() != 0) {
-       SDL_Log("SDLNet_Init failed: %s", SDLNet_GetError());
-       return false;
-   }
-
-
-   game->pSocket = SDLNet_UDP_Open(0);
-   if (!game->pSocket) {
-       SDL_Log("SDLNet_UDP_Open failed: %s", SDLNet_GetError());
-       SDLNet_Quit();
-       return false;
-   }
-
-
-   if (SDLNet_ResolveHost(&game->serverAddress, ip, SERVER_PORT) != 0) {
-       SDL_Log("SDLNet_ResolveHost failed for %s: %s", ip, SDLNet_GetError());
-       SDLNet_UDP_Close(game->pSocket);
-       SDLNet_Quit();
-       return false;
-   }
-
-
-   game->pPacket = SDLNet_AllocPacket(512);
-   if (!game->pPacket) {
-       SDL_Log("SDLNet_AllocPacket failed: %s", SDLNet_GetError());
-       SDLNet_UDP_Close(game->pSocket);
-       SDLNet_Quit();
-       return false;
-   }
-
-
-   ClientData connectData = {CONNECT, 0};
-   memcpy(game->pPacket->data, &connectData, sizeof(ClientData));
-   game->pPacket->len = sizeof(ClientData);
-   game->pPacket->address = game->serverAddress;
-
-
-   if (SDLNet_UDP_Send(game->pSocket, -1, game->pPacket) == 0) {
-       SDL_Log("SDLNet_UDP_Send failed: %s", SDLNet_GetError());
-       SDLNet_FreePacket(game->pPacket);
-       SDLNet_UDP_Close(game->pSocket);
-       SDLNet_Quit();
-       return false;
-   }
-
-
-   if (!waitForServerResponse(game, 5000)) {
-       SDL_Log("Server connection timeout");
-       *timedOut = true;
-       SDLNet_FreePacket(game->pPacket);
-       SDLNet_UDP_Close(game->pSocket);
-       SDLNet_Quit();
-       return false;
-   }
-
-
-   if (SDLNet_UDP_Recv(game->pSocket, game->pPacket)) {
-       ClientData response;
-       memcpy(&response, game->pPacket->data, sizeof(ClientData));
-       if (response.command == CONNECT) {
-           game->playerNumber = response.playerNumber;
-           SDL_Log("Connected as player %d", game->playerNumber);
-           return true;
-       }
-   }
-
-
-   SDL_Log("No valid response from server");
-   SDLNet_FreePacket(game->pPacket);
-   SDLNet_UDP_Close(game->pSocket);
-   SDLNet_Quit();
-   return false;
+void getLocalIP(char* buffer, size_t size) {
+    char hostname[256];
+    if (gethostname(hostname, sizeof(hostname)) == 0) {
+        struct hostent* host = gethostbyname(hostname);
+        if (host && host->h_addr_list[0]) {
+            Uint32 ip = *(Uint32*)host->h_addr_list[0];
+            ip = SDL_SwapBE32(ip);
+            snprintf(buffer, size, "%d.%d.%d.%d",
+                     ip >> 24,
+                     (ip >> 16) & 0xFF,
+                     (ip >> 8) & 0xFF,
+                     ip & 0xFF);
+            return;
+        }
+    }
+    snprintf(buffer, size, "Unknown");
 }
-
-
-
-
 void enterServerIp(Game* game) {
    SDL_StartTextInput();
    SDL_Texture* background = IMG_LoadTexture(game->pRenderer, "../lib/resources/selTankBg.png");
@@ -271,169 +164,23 @@ void enterServerIp(Game* game) {
                }
            }
        }
-
-
            SDL_RenderClear(game->pRenderer); // först rensa
            SDL_RenderCopy(game->pRenderer, background, NULL, NULL); // sen rita bilden
 
-
            SDL_Color white = {255, 255, 255, 255};
-           renderText(game->pRenderer, "Skriv IP och tryck ENTER:", 175, 100, white);
-           renderText(game->pRenderer, inputBuffer, 175, 150, white);
-
+           renderText(game->pRenderer, "Type IP and press ENTER:", 175, 100, white);
+        
+            if (strlen(inputBuffer) > 0) {
+                renderText(game->pRenderer, inputBuffer, 175, 150, white);
+            }
 
            SDL_RenderPresent(game->pRenderer);
            SDL_Delay(16);
-
-
    }
-
-
    SDL_StopTextInput();
    SDL_DestroyTexture(background);
-
-
 }
 
-
-
-
-DialogResult showErrorDialog(Game* game, const char* title, const char* message) {
-   TTF_Font* font = TTF_OpenFont("../lib/resources/Orbitron-Bold.ttf", 24);
-   if (!font) {
-       SDL_Log("TTF_OpenFont failed: %s", TTF_GetError());
-       return DIALOG_RESULT_CANCEL;
-   }
-
-
-   SDL_Color textColor = {255, 255, 255, 255};
-   SDL_Surface* titleSurface = TTF_RenderText_Solid(font, title, textColor);
-   SDL_Surface* messageSurface = TTF_RenderText_Solid(font, message, textColor);
-   if (!titleSurface || !messageSurface) {
-       SDL_Log("TTF_RenderText_Solid failed: %s", TTF_GetError());
-       TTF_CloseFont(font);
-       return DIALOG_RESULT_CANCEL;
-   }
-
-
-   SDL_Texture* titleTexture = SDL_CreateTextureFromSurface(game->pRenderer, titleSurface);
-   SDL_Texture* messageTexture = SDL_CreateTextureFromSurface(game->pRenderer, messageSurface);
-   SDL_FreeSurface(titleSurface);
-   SDL_FreeSurface(messageSurface);
-   if (!titleTexture || !messageTexture) {
-       SDL_Log("SDL_CreateTextureFromSurface failed: %s", SDL_GetError());
-       TTF_CloseFont(font);
-       return DIALOG_RESULT_CANCEL;
-   }
-
-
-   SDL_Surface* tryAgainSurface = TTF_RenderText_Solid(font, "Try Again", textColor);
-   SDL_Surface* cancelSurface = TTF_RenderText_Solid(font, "Cancel", textColor);
-   if (!tryAgainSurface || !cancelSurface) {
-       SDL_Log("TTF_RenderText_Solid failed: %s", TTF_GetError());
-       SDL_DestroyTexture(titleTexture);
-       SDL_DestroyTexture(messageTexture);
-       TTF_CloseFont(font);
-       return DIALOG_RESULT_CANCEL;
-   }
-
-
-   SDL_Texture* tryAgainTexture = SDL_CreateTextureFromSurface(game->pRenderer, tryAgainSurface);
-   SDL_Texture* cancelTexture = SDL_CreateTextureFromSurface(game->pRenderer, cancelSurface);
-   SDL_FreeSurface(tryAgainSurface);
-   SDL_FreeSurface(cancelSurface);
-   if (!tryAgainTexture || !cancelTexture) {
-       SDL_Log("SDL_CreateTextureFromSurface failed: %s", SDL_GetError());
-       SDL_DestroyTexture(titleTexture);
-       SDL_DestroyTexture(messageTexture);
-       TTF_CloseFont(font);
-       return DIALOG_RESULT_CANCEL;
-   }
-
-
-   int dialogW = 400;
-   int dialogH = 200;
-   SDL_Rect dialogRect = {(WINDOW_WIDTH - dialogW) / 2, (WINDOW_HEIGHT - dialogH) / 2, dialogW, dialogH};
-
-
-   int titleW, titleH, messageW, messageH;
-   SDL_QueryTexture(titleTexture, NULL, NULL, &titleW, &titleH);
-   SDL_QueryTexture(messageTexture, NULL, NULL, &messageW, &messageH);
-   SDL_Rect titleRect = {dialogRect.x + (dialogW - titleW) / 2, dialogRect.y + 20, titleW, titleH};
-   SDL_Rect messageRect = {dialogRect.x + (dialogW - messageW) / 2, dialogRect.y + 50, messageW, messageH};
-
-
-   int buttonW = 100;
-   int buttonH = 40;
-   int tryAgainW, tryAgainH, cancelW, cancelH;
-   SDL_QueryTexture(tryAgainTexture, NULL, NULL, &tryAgainW, &tryAgainH);
-   SDL_QueryTexture(cancelTexture, NULL, NULL, &cancelW, &cancelH);
-   SDL_Rect tryAgainButtonRect = {dialogRect.x + 80, dialogRect.y + dialogH - 60, buttonW, buttonH};
-   SDL_Rect cancelButtonRect = {dialogRect.x + dialogW - 80 - buttonW, dialogRect.y + dialogH - 60, buttonW, buttonH};
-   SDL_Rect tryAgainTextRect = {tryAgainButtonRect.x + (buttonW - tryAgainW) / 2, tryAgainButtonRect.y + (buttonH - tryAgainH) / 2, tryAgainW, tryAgainH};
-   SDL_Rect cancelTextRect = {cancelButtonRect.x + (buttonW - cancelW) / 2, cancelButtonRect.y + (buttonH - cancelH) / 2, cancelW, cancelH};
-
-
-   bool inDialog = true;
-   DialogResult result = DIALOG_RESULT_NONE;
-
-
-   while (inDialog) {
-       while (SDL_PollEvent(&game->event)) {
-           if (game->event.type == SDL_QUIT) {
-               game->state = STATE_EXIT;
-               inDialog = false;
-               result = DIALOG_RESULT_CANCEL;
-           } else if (game->event.type == SDL_MOUSEBUTTONDOWN) {
-               int x = game->event.button.x;
-               int y = game->event.button.y;
-               if (SDL_PointInRect(&(SDL_Point){x, y}, &tryAgainButtonRect)) {
-                   result = DIALOG_RESULT_TRY_AGAIN;
-                   inDialog = false;
-               } else if (SDL_PointInRect(&(SDL_Point){x, y}, &cancelButtonRect)) {
-                   result = DIALOG_RESULT_CANCEL;
-                   inDialog = false;
-               }
-           }
-       }
-
-
-       SDL_SetRenderDrawColor(game->pRenderer, 50, 50, 50, 255); // background
-       SDL_RenderFillRect(game->pRenderer, &dialogRect);
-       SDL_SetRenderDrawColor(game->pRenderer, 255, 255, 255, 255); // White border
-       SDL_RenderDrawRect(game->pRenderer, &dialogRect);
-
-
-       SDL_RenderCopy(game->pRenderer, titleTexture, NULL, &titleRect);
-       SDL_RenderCopy(game->pRenderer, messageTexture, NULL, &messageRect);
-
-
-       SDL_SetRenderDrawColor(game->pRenderer, 100, 100, 100, 255); // Button background
-       SDL_RenderFillRect(game->pRenderer, &tryAgainButtonRect);
-       SDL_RenderFillRect(game->pRenderer, &cancelButtonRect);
-       SDL_SetRenderDrawColor(game->pRenderer, 255, 255, 255, 255); // Button border
-       SDL_RenderDrawRect(game->pRenderer, &tryAgainButtonRect);
-       SDL_RenderDrawRect(game->pRenderer, &cancelButtonRect);
-
-
-       SDL_RenderCopy(game->pRenderer, tryAgainTexture, NULL, &tryAgainTextRect);
-       SDL_RenderCopy(game->pRenderer, cancelTexture, NULL, &cancelTextRect);
-
-
-       SDL_RenderPresent(game->pRenderer);
-       SDL_Delay(16);
-   }
-
-
-   SDL_DestroyTexture(titleTexture);
-   SDL_DestroyTexture(messageTexture);
-   SDL_DestroyTexture(tryAgainTexture);
-   SDL_DestroyTexture(cancelTexture);
-   TTF_CloseFont(font);
-
-
-   return result;
-}
 
 
 void runMainMenu(Game* game) {
@@ -461,11 +208,17 @@ void runMainMenu(Game* game) {
 
                 if (SDL_PointInRect(&(SDL_Point){x, y}, &rectHost)) {
                     SDLNet_Init();
+                    getLocalIP(game->ipAddress, sizeof(game->ipAddress));
                     connectedPlayers = 1;
-                    SDL_CreateThread(runAsServerThread, "ServerThread", NULL);
+                    SDL_CreateThread(serverThread, "ServerThread", NULL);
 
                     SDL_Texture* bgWait = IMG_LoadTexture(game->pRenderer, "../lib/resources/menu_bg.png");
                     bool waiting = true;
+
+                    char ipBuffer[64];
+                    char ipText[128];
+                    getLocalIP(ipBuffer, sizeof(ipBuffer));
+                    snprintf(ipText, sizeof(ipText), "IP: %s:%d", ipBuffer, SERVER_PORT);
 
                     while (waiting && connectedPlayers < MAX_PLAYERS) {
                         while (SDL_PollEvent(&game->event)) {
@@ -486,6 +239,7 @@ void runMainMenu(Game* game) {
                         snprintf(statusText, sizeof(statusText), "Waiting for players... %d/%d players", connectedPlayers, MAX_PLAYERS);
                         renderText(game->pRenderer, statusText, 200, 300, white);
                         renderText(game->pRenderer, "Press ESC to cancel", 200, 360, white);
+                        renderText(game->pRenderer, ipText, 200, 420, white);
 
                         SDL_RenderPresent(game->pRenderer);
                         SDL_Delay(100);
@@ -551,54 +305,6 @@ void runMainMenu(Game* game) {
     SDL_DestroyTexture(btnSelectTank);
     SDL_DestroyTexture(btnExit);
 }
-
-
-int runAsServerThread(void* data) {
-   UDPsocket serverSocket = SDLNet_UDP_Open(SERVER_PORT);
-   if (!serverSocket) {
-       SDL_Log("Could not open UDP socket: %s", SDLNet_GetError());
-       return -1;
-   }
-
-   UDPpacket* packet = SDLNet_AllocPacket(512);
-   if (!packet) {
-       SDL_Log("Could not allocate packet: %s", SDLNet_GetError());
-       SDLNet_UDP_Close(serverSocket);
-       return -1;
-   }
-
-   int playerNumber = 1;
-
-    while (connectedPlayers < MAX_PLAYERS) {
-        if (SDLNet_UDP_Recv(serverSocket, packet)) {
-            ClientData request;
-            memcpy(&request, packet->data, sizeof(ClientData));
-
-            if (request.command == CONNECT) {
-                ClientData response;
-                response.command = CONNECT;
-                response.playerNumber = playerNumber++;
-
-                memcpy(packet->data, &response, sizeof(ClientData));
-                packet->len = sizeof(ClientData);
-                SDLNet_UDP_Send(serverSocket, -1, packet);
-
-                SDL_Log("Player %d connected", response.playerNumber);
-                connectedPlayers++;
-            }
-        }
-        SDL_Delay(10);
-    }
-
-   if (packet != NULL) {
-    SDLNet_FreePacket(packet);
-    }
-    if (serverSocket != NULL) {
-        SDLNet_UDP_Close(serverSocket);
-    }
-   return 0;
-}
-
 
 void run(Game *game)
 {
@@ -894,28 +600,83 @@ void loadSelectedTankTexture(Game* game) {
    }
 }
 
+DialogResult showErrorDialog(Game* game, const char* title, const char* message) {
+    if (!title || strlen(title) == 0 || !message || strlen(message) == 0) {
+        SDL_Log("ErrorDialog: Title or message is empty");
+        return DIALOG_RESULT_CANCEL;
+    }
 
-bool waitForServerResponse(Game *game, Uint32 timeout_ms) {
-   SDLNet_SocketSet socketSet = SDLNet_AllocSocketSet(1);
-   if (!socketSet) {
-       printf("SDLNet_AllocSocketSet: %s\n", SDLNet_GetError());
-       return false;
-   }
-   SDLNet_UDP_AddSocket(socketSet, game->pSocket);
+    TTF_Font* font = TTF_OpenFont("../lib/resources/Orbitron-Bold.ttf", 24);
+    if (!font) {
+        SDL_Log("TTF_OpenFont failed: %s", TTF_GetError());
+        return DIALOG_RESULT_CANCEL;
+    }
 
-   int numready = SDLNet_CheckSockets(socketSet, timeout_ms);
+    SDL_Color textColor = {255, 255, 255, 255};
 
-   SDLNet_FreeSocketSet(socketSet);
+    SDL_Surface* titleSurface = TTF_RenderText_Solid(font, title, textColor);
+    if (!titleSurface) {
+        SDL_Log("Failed to render title text: %s", TTF_GetError());
+        TTF_CloseFont(font);
+        return DIALOG_RESULT_CANCEL;
+    }
 
-   if (numready == -1) {
-       printf("SDLNet_CheckSockets error: %s\n", SDLNet_GetError());
-       return false;
-   }
+    SDL_Surface* messageSurface = TTF_RenderText_Solid(font, message, textColor);
+    if (!messageSurface) {
+        SDL_Log("Failed to render message text: %s", TTF_GetError());
+        SDL_FreeSurface(titleSurface);
+        TTF_CloseFont(font);
+        return DIALOG_RESULT_CANCEL;
+    }
 
-   return numready > 0;
+    SDL_Texture* titleTexture = SDL_CreateTextureFromSurface(game->pRenderer, titleSurface);
+    SDL_Texture* messageTexture = SDL_CreateTextureFromSurface(game->pRenderer, messageSurface);
+    SDL_FreeSurface(titleSurface);
+    SDL_FreeSurface(messageSurface);
+
+    if (!titleTexture || !messageTexture) {
+        SDL_Log("Failed to create textures from surfaces: %s", SDL_GetError());
+        if (titleTexture) SDL_DestroyTexture(titleTexture);
+        if (messageTexture) SDL_DestroyTexture(messageTexture);
+        TTF_CloseFont(font);
+        return DIALOG_RESULT_CANCEL;
+    }
+
+    int dialogW = 400, dialogH = 200;
+    SDL_Rect dialogRect = {(800 - dialogW) / 2, (600 - dialogH) / 2, dialogW, dialogH};
+
+    bool inDialog = true;
+    DialogResult result = DIALOG_RESULT_NONE;
+
+    while (inDialog) {
+        while (SDL_PollEvent(&game->event)) {
+            if (game->event.type == SDL_QUIT) {
+                game->state = STATE_EXIT;
+                inDialog = false;
+                result = DIALOG_RESULT_CANCEL;
+            } else if (game->event.type == SDL_MOUSEBUTTONDOWN) {
+                inDialog = false;
+                result = DIALOG_RESULT_CANCEL;
+            }
+        }
+
+        SDL_SetRenderDrawColor(game->pRenderer, 50, 50, 50, 255);
+        SDL_RenderFillRect(game->pRenderer, &dialogRect);
+        SDL_RenderCopy(game->pRenderer, titleTexture, NULL, NULL);
+        SDL_RenderCopy(game->pRenderer, messageTexture, NULL, NULL);
+        SDL_RenderPresent(game->pRenderer);
+        SDL_Delay(16);
+    }
+
+    SDL_DestroyTexture(titleTexture);
+    SDL_DestroyTexture(messageTexture);
+    TTF_CloseFont(font);
+    return result;
 }
 
-void close(Game *game)
+
+
+void closeGame(Game *game)
 {
     if (game->tank) destroyTankInstance(game->tank);
     destroyTank();

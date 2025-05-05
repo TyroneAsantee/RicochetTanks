@@ -4,6 +4,7 @@
 #include <SDL2/SDL_net.h>
 #include <SDL2/SDL.h>
 #include <stdbool.h>
+#include "network_protocol.h"
 
 #define SERVER_PORT 12345
 #define MAX_PLAYERS 4
@@ -24,4 +25,4 @@ void handleClientConnections(void);
 void checkPlayerHeartbeats(void);
 int serverThread(void* data);
 
-#endif // SERVER_H
+#endif 

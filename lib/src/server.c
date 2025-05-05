@@ -1,6 +1,8 @@
 #include "server.h"
 #include <string.h>
 #include "tank.h"
+#include "network_protocol.h"
+
 
 #define WINDOW_WIDTH 800 
 #define WINDOW_HEIGHT 600
@@ -20,16 +22,6 @@ typedef struct {
     int arenaHeight;
 } GameInitData;
 
-typedef enum {
-    CONNECT, 
-    UPDATE,
- } ClientCommand;
-
-typedef struct {
-    ClientCommand command;
-    int playerNumber;
-    Tank* tank;
- } ClientData;
 
 bool initServer() {
     if (SDLNet_Init() == -1) {
@@ -65,18 +57,20 @@ void sendInitialGameData(Player *player) {
 }
 
 void handleClientConnections() {
-    if (numConnectedPlayers < MAX_PLAYERS && SDLNet_UDP_Recv(serverSocket, packet)) {
+    while (SDLNet_UDP_Recv(serverSocket, packet)) {
         ClientData request;
         memcpy(&request, packet->data, sizeof(ClientData));
 
-        if (request.command == CONNECT) {
+        if (request.command == CONNECT && numConnectedPlayers < MAX_PLAYERS) {
             Player newPlayer = {
                 packet->address,
                 numConnectedPlayers + 1,
                 true
             };
+
             Tank* tank = createTank();
-            tanks[numConnectedPlayers - 1] = tank;
+            setTankPosition(tank, 100 + 100 * numConnectedPlayers, 100);  // exempelposition
+            tanks[numConnectedPlayers] = tank;
 
             connectedPlayers[numConnectedPlayers] = newPlayer;
             playerStatus[numConnectedPlayers] = (PlayerStatus){SDL_GetTicks(), true};
@@ -85,16 +79,51 @@ void handleClientConnections() {
             ClientData response = {CONNECT, newPlayer.playerID};
             memcpy(packet->data, &response, sizeof(ClientData));
             packet->len = sizeof(ClientData);
+            packet->address = newPlayer.address;
 
             SDLNet_UDP_Send(serverSocket, -1, packet);
             SDL_Log("Player %d connected", newPlayer.playerID);
 
             sendInitialGameData(&newPlayer);
         }
-        if(SDLNet_UDP_Recv(serverSocket, packet) && request.command == UPDATE){
-            // int playerid = packet.id;
-            // run();
+
+        else if (request.command == UPDATE) {
+            int id = request.playerNumber;
+            if (id >= 1 && id <= MAX_PLAYERS) {
+                // Uppdatera tankens data på servern
+                if (tanks[id - 1]) {
+                    setTankPosition(tanks[id - 1], request.x, request.y);
+                    setTankAngle(tanks[id - 1], request.angle);
+                }
+                playerStatus[id - 1].lastHeartbeat = SDL_GetTicks();
+            }
         }
+    }
+}
+
+void broadcastGameState() {
+    ServerData gameState;
+    gameState.command = GAME_STATE;
+    gameState.numPlayers = numConnectedPlayers;
+
+    for (int i = 0; i < numConnectedPlayers; i++) {
+        if (tanks[i] && connectedPlayers[i].active) {
+            gameState.tanks[i].playerNumber = connectedPlayers[i].playerID;
+            SDL_Rect rect = getTankRect(tanks[i]);
+            gameState.tanks[i].x = rect.x;
+            gameState.tanks[i].y = rect.y;
+            gameState.tanks[i].angle = getTankAngle(tanks[i]);
+            gameState.tanks[i].shooting = false; // TODO: Skottlogik
+        }
+    }
+
+    for (int i = 0; i < numConnectedPlayers; i++) {
+        if (!connectedPlayers[i].active) continue;
+
+        packet->address = connectedPlayers[i].address;
+        memcpy(packet->data, &gameState, sizeof(ServerData));
+        packet->len = sizeof(ServerData);
+        SDLNet_UDP_Send(serverSocket, -1, packet);
     }
 }
 
@@ -113,12 +142,20 @@ int serverThread(void* data) {
     if (!initServer()) {
         return -1;
     }
+   
+   Uint32 lastBroadcast = SDL_GetTicks();
 
     while (true) {
         handleClientConnections();
         checkPlayerHeartbeats();
+
+        Uint32 now = SDL_GetTicks();
+        if (now - lastBroadcast > 100) { // var 100ms
+            broadcastGameState();
+            lastBroadcast = now;
+        }
+
         SDL_Delay(10);
     }
-
     return 0;
 }
