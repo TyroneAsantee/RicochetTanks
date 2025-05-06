@@ -19,9 +19,10 @@ void setTankAngle(Tank* tank, float angle);
 void setTankHealth(Tank* tank, int health);
 bool isTankAlive(Tank* tank);
 int getTankHealth(const Tank* tank);
-
-SDL_Rect getTankRect(Tank* tank);
-float getTankAngle(Tank* tank);
+void setTankColorId(Tank* tank, int colorId);
+int getTankColorId(const Tank* tank);
+SDL_Rect getTankRect(const Tank* tank);
+float getTankAngle(const Tank* tank);
 
 void initTank(SDL_Renderer* renderer);
 void drawTank(SDL_Renderer* renderer, Tank* tank, SDL_Texture* texture);

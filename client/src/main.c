@@ -1,18 +1,14 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
-#include <SDL2/SDL_net.h>
 #include <SDL2/SDL_ttf.h>
 #include <stdbool.h>
 #include <math.h>
-#include <unistd.h>      // gethostname
-#include <netdb.h>       // gethostbyname
 #include "tank.h"
 #include "timer.h"
 #include "bullet.h"
 #include "collision.h"
 #include "text.h"
 #include "wall.h"
-#include "server.h"
 #include "client.h"
 #include "network_protocol.h"
 #include "game.h"
@@ -34,10 +30,6 @@
 #define MAX_PLAYERS 4
 volatile int connectedPlayers = 1;
 
-
-
-
-
 typedef enum {
    DIALOG_RESULT_NONE,
    DIALOG_RESULT_TRY_AGAIN,
@@ -47,7 +39,6 @@ typedef enum {
 
 
 void initiate(Game* game);
-void getLocalIP(char* buffer, size_t size);
 bool connectToServer(Game* game, const char* ip, bool *timedOut);
 void run(Game* game);
 void runMainMenu(Game* game);
@@ -56,7 +47,6 @@ void selectTank(Game* game);
 void loadSelectedTankTexture(Game* game);
 void closeGame(Game* game);
 bool waitForServerResponse(Game *game, Uint32 timeout_ms);
-int runAsServerThread(void* data);
 DialogResult showErrorDialog(Game* game, const char* title, const char* message);
 
 
@@ -71,6 +61,7 @@ int main(int argv, char* args[]) {
                runMainMenu(&game);
                break;
            case STATE_RUNNING:
+                SDL_Log("DEBUG: main() går in i run()");
                run(&game);
                break;
            case STATE_SELECT_TANK:
@@ -82,8 +73,7 @@ int main(int argv, char* args[]) {
        }
    }
 
-
-   close(&game);
+   closeGame(&game);
    return 0;
 }
 
@@ -108,34 +98,13 @@ void initiate(Game *game)
 
    initiate_timer(&game->timer);
 
-   game->tank = createTank();
-   setTankPosition(game->tank, 400, 300);
-   setTankAngle(game->tank, 0);
-   setTankHealth(game->tank, 3);
-
    game->state = STATE_MENU;
    game->pPacket = NULL;
    game->pSocket = NULL;
    game->tankColorId = 0;
 }
 
-void getLocalIP(char* buffer, size_t size) {
-    char hostname[256];
-    if (gethostname(hostname, sizeof(hostname)) == 0) {
-        struct hostent* host = gethostbyname(hostname);
-        if (host && host->h_addr_list[0]) {
-            Uint32 ip = *(Uint32*)host->h_addr_list[0];
-            ip = SDL_SwapBE32(ip);
-            snprintf(buffer, size, "%d.%d.%d.%d",
-                     ip >> 24,
-                     (ip >> 16) & 0xFF,
-                     (ip >> 8) & 0xFF,
-                     ip & 0xFF);
-            return;
-        }
-    }
-    snprintf(buffer, size, "Unknown");
-}
+
 void enterServerIp(Game* game) {
    SDL_StartTextInput();
    SDL_Texture* background = IMG_LoadTexture(game->pRenderer, "../lib/resources/selTankBg.png");
@@ -207,18 +176,16 @@ void runMainMenu(Game* game) {
                 int y = game->event.button.y;
 
                 if (SDL_PointInRect(&(SDL_Point){x, y}, &rectHost)) {
-                    SDLNet_Init();
-                    getLocalIP(game->ipAddress, sizeof(game->ipAddress));
-                    connectedPlayers = 1;
-                    SDL_CreateThread(serverThread, "ServerThread", NULL);
+                    SDL_Delay(200);
 
+                    // 🔁 Host ansluter till sin egen server
+                    bool timedOut;
+                    if (!connectToServer(game, game->ipAddress, &timedOut)) {
+                        SDL_Log("Host kunde inte ansluta till sin egen server.");
+                        return;
+                    }
                     SDL_Texture* bgWait = IMG_LoadTexture(game->pRenderer, "../lib/resources/menu_bg.png");
                     bool waiting = true;
-
-                    char ipBuffer[64];
-                    char ipText[128];
-                    getLocalIP(ipBuffer, sizeof(ipBuffer));
-                    snprintf(ipText, sizeof(ipText), "IP: %s:%d", ipBuffer, SERVER_PORT);
 
                     while (waiting && connectedPlayers < MAX_PLAYERS) {
                         while (SDL_PollEvent(&game->event)) {
@@ -228,6 +195,17 @@ void runMainMenu(Game* game) {
                                 inMenu = true;
                                 waiting = false;
                                 break;
+                            }
+
+                            if (game->event.type == SDL_KEYDOWN && game->event.key.keysym.sym == SDLK_SPACE) {
+                                //if (connectedPlayers >= 2) {
+                                    loadSelectedTankTexture(game);
+                                    game->state = STATE_RUNNING;
+                                    SDL_Log("DEBUG: runMainMenu satte state till STATE_RUNNING");
+                                    inMenu = false;
+                                    waiting = false;
+                                    break;
+                                //}
                             }
                         }
 
@@ -239,8 +217,6 @@ void runMainMenu(Game* game) {
                         snprintf(statusText, sizeof(statusText), "Waiting for players... %d/%d players", connectedPlayers, MAX_PLAYERS);
                         renderText(game->pRenderer, statusText, 200, 300, white);
                         renderText(game->pRenderer, "Press ESC to cancel", 200, 360, white);
-                        renderText(game->pRenderer, ipText, 200, 420, white);
-
                         SDL_RenderPresent(game->pRenderer);
                         SDL_Delay(100);
                     }
@@ -262,12 +238,16 @@ void runMainMenu(Game* game) {
 
                     while (tryConnect) {
                         bool timedOut = false;
+                        SDL_Log("INFO: Försöker ansluta till %s...", game->ipAddress);
                         if (connectToServer(game, game->ipAddress, &timedOut)) {
+                            SDL_Log("INFO: Anslutning lyckades, går vidare till STATE_RUNNING");
                             loadSelectedTankTexture(game);
                             game->state = STATE_RUNNING;
+                            SDL_Log("DEBUG: runMainMenu satte state till STATE_RUNNING");
                             inMenu = false;
                             tryConnect = false;
                         } else {
+                            SDL_Log("ERROR: connectToServer() misslyckades. timedOut=%d", timedOut);
                             DialogResult result = showErrorDialog(game, "ERROR", timedOut ? "Could not connect to server." : "Connection failed.");
                             if (result == DIALOG_RESULT_TRY_AGAIN) {
                                 enterServerIp(game);
@@ -308,10 +288,27 @@ void runMainMenu(Game* game) {
 
 void run(Game *game)
 {
+    Uint32 start = SDL_GetTicks();
+    while (!game->tank && SDL_GetTicks() - start < 3000) {
+        receiveGameState(game);
+        SDL_Delay(10);
+    }
+    if (!game->tank) {
+        SDL_Log("ERROR: Timeout, game->tank är fortfarande NULL. Avbryter spelstart.");
+        game->state = STATE_MENU;
+        return;
+    }
+    SDL_Log("DEBUG: run() - innan getTankRect");
     SDL_Rect tankRect = getTankRect(game->tank);
+    SDL_Log("DEBUG: tankRect: x=%d y=%d w=%d h=%d", tankRect.x, tankRect.y, tankRect.w, tankRect.h);
+
     float shipX = tankRect.x;
     float shipY = tankRect.y;
+    
+    SDL_Log("DEBUG: run() - innan getTankAngle");
     float angle = getTankAngle(game->tank);
+    SDL_Log("DEBUG: run() - efter getTankAngle");
+
     float shipVelocityX = 0;
     float shipVelocityY = 0;
     bool closeWindow = false;
@@ -326,6 +323,7 @@ void run(Game *game)
 
     while (!closeWindow) {
         update_timer(&game->timer);
+        receiveGameState(game);
         float dt = get_timer(&game->timer);
 
         while (SDL_PollEvent(&game->event)) {
@@ -341,7 +339,7 @@ void run(Game *game)
                             if (SDL_GetTicks() - game->lastshottime > 200) {
                                 for (int i = 0; i < MAX_BULLETS; i++) {
                                     if (!game->bullets[i].active) {
-                                        fireBullet(&game->bullets[i], shipX + tankRect.w / 2, shipY + tankRect.h / 2, angle, 0);
+                                        fireBullet(&game->bullets[i], shipX + tankRect.w / 2, shipY + tankRect.h / 2, angle, game->playerNumber);
                                         game->lastshottime = SDL_GetTicks();
                                         break;
                                     }
@@ -421,7 +419,11 @@ void run(Game *game)
         if (shipX > WINDOW_WIDTH - tankRect.w) shipX = WINDOW_WIDTH - tankRect.w;
         if (shipY > WINDOW_HEIGHT - tankRect.h) shipY = WINDOW_HEIGHT - tankRect.h;
 
+        SDL_Log("DEBUG: run() - innan setTankPosition (%.2f, %.2f)", shipX, shipY);
         setTankPosition(game->tank, shipX, shipY);
+        SDL_Log("DEBUG: run() - efter setTankPosition");
+
+
         setTankAngle(game->tank, angle);
 
         SDL_RenderClear(game->pRenderer);
@@ -431,6 +433,17 @@ void run(Game *game)
         renderWall(game->pRenderer, game->topRight);
         renderWall(game->pRenderer, game->bottomLeft);
         renderWall(game->pRenderer, game->bottomRight);
+
+        for (int i = 0; i < game->numOtherTanks; i++) {
+            TankState t = game->otherTanks[i];
+            SDL_Rect otherRect = { t.x, t.y, 64, 64 };
+
+            int id = t.tankColorId;
+            if (id < 0 || id >= MAXTANKS) id = 0;
+
+            SDL_Texture* tex = game->tankTextures[id];
+            SDL_RenderCopyEx(game->pRenderer, tex, NULL, &otherRect, t.angle, NULL, SDL_FLIP_NONE);
+        }
 
         if (isTankAlive(game->tank)) {
             drawTank(game->pRenderer, game->tank, game->pTankpicture);
@@ -576,28 +589,15 @@ void selectTank(Game* game) {
 
 
 void loadSelectedTankTexture(Game* game) {
-   if (game->pTankpicture != NULL) {
-       SDL_DestroyTexture(game->pTankpicture);
-       game->pTankpicture = NULL;
-   }
+    game->tankTextures[0] = IMG_LoadTexture(game->pRenderer, "../lib/resources/tank.png");
+    game->tankTextures[1] = IMG_LoadTexture(game->pRenderer, "../lib/resources/tank_lego.png");
+    game->tankTextures[2] = IMG_LoadTexture(game->pRenderer, "../lib/resources/tank_light.png");
+    game->tankTextures[3] = IMG_LoadTexture(game->pRenderer, "../lib/resources/tank_dark.png");
 
-   switch (game->tankColorId) {
-       case 0:
-           game->pTankpicture = IMG_LoadTexture(game->pRenderer, "../lib/resources/tank.png");
-           break;
-       case 1:
-           game->pTankpicture = IMG_LoadTexture(game->pRenderer, "../lib/resources/tank_lego.png");
-           break;
-       case 2:
-           game->pTankpicture = IMG_LoadTexture(game->pRenderer, "../lib/resources/tank_light.png");
-           break;
-       case 3:
-           game->pTankpicture = IMG_LoadTexture(game->pRenderer, "../lib/resources/tank_dark.png");
-           break;
-       default:
-           game->pTankpicture = IMG_LoadTexture(game->pRenderer, "../lib/resources/tank.png");
-           break;
-   }
+    // Sätt spelarens egen textur baserat på val
+    int id = game->tankColorId;
+    if (id < 0 || id >= MAXTANKS) id = 0;
+    game->pTankpicture = game->tankTextures[id];
 }
 
 DialogResult showErrorDialog(Game* game, const char* title, const char* message) {
@@ -687,6 +687,12 @@ void closeGame(Game *game)
     destroyWall(game->bottomLeft);
     destroyWall(game->bottomRight);
 
+    for (int i = 0; i < MAXTANKS; i++) {
+        if (game->tankTextures[i]) {
+            SDL_DestroyTexture(game->tankTextures[i]);
+            game->tankTextures[i] = NULL;
+        }
+    }
     if (game->pTankpicture != NULL) {
         SDL_DestroyTexture(game->pTankpicture);
         game->pTankpicture = NULL;

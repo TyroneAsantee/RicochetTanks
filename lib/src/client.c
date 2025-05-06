@@ -10,71 +10,50 @@
 #define SERVER_PORT 12345
 
 bool connectToServer(Game* game, const char* ip, bool *timedOut) {
-    *timedOut = false;
-
-    if (SDLNet_Init() != 0) {
-        SDL_Log("SDLNet_Init failed: %s", SDLNet_GetError());
+    IPaddress serverIP;
+    if (SDLNet_ResolveHost(&serverIP, ip, SERVER_PORT) == -1) {
+        SDL_Log("SDLNet_ResolveHost: %s", SDLNet_GetError());
         return false;
     }
 
     game->pSocket = SDLNet_UDP_Open(0);
     if (!game->pSocket) {
-        SDL_Log("SDLNet_UDP_Open failed: %s", SDLNet_GetError());
-        SDLNet_Quit();
-        return false;
-    }
-
-    if (SDLNet_ResolveHost(&game->serverAddress, ip, SERVER_PORT) != 0) {
-        SDL_Log("SDLNet_ResolveHost failed for %s: %s", ip, SDLNet_GetError());
-        SDLNet_UDP_Close(game->pSocket);
-        SDLNet_Quit();
+        SDL_Log("SDLNet_UDP_Open: %s", SDLNet_GetError());
         return false;
     }
 
     game->pPacket = SDLNet_AllocPacket(512);
     if (!game->pPacket) {
-        SDL_Log("SDLNet_AllocPacket failed: %s", SDLNet_GetError());
-        SDLNet_UDP_Close(game->pSocket);
-        SDLNet_Quit();
+        SDL_Log("SDLNet_AllocPacket: %s", SDLNet_GetError());
         return false;
     }
 
-    ClientData connectData = {CONNECT, 0};
-    memcpy(game->pPacket->data, &connectData, sizeof(ClientData));
+    ClientData request = { CONNECT };
+    request.tankColorId = game->tankColorId;
+
+    memcpy(game->pPacket->data, &request, sizeof(ClientData));
     game->pPacket->len = sizeof(ClientData);
-    game->pPacket->address = game->serverAddress;
+    game->pPacket->address = serverIP;
+    SDLNet_UDP_Send(game->pSocket, -1, game->pPacket);
 
-    if (SDLNet_UDP_Send(game->pSocket, -1, game->pPacket) == 0) {
-        SDL_Log("SDLNet_UDP_Send failed: %s", SDLNet_GetError());
-        SDLNet_FreePacket(game->pPacket);
-        SDLNet_UDP_Close(game->pSocket);
-        SDLNet_Quit();
-        return false;
-    }
+    Uint32 start = SDL_GetTicks();
+    *timedOut = false;
 
-    if (!waitForServerResponse(game, 5000)) {
-        SDL_Log("Server connection timeout");
-        *timedOut = true;
-        SDLNet_FreePacket(game->pPacket);
-        SDLNet_UDP_Close(game->pSocket);
-        SDLNet_Quit();
-        return false;
-    }
-
-    if (SDLNet_UDP_Recv(game->pSocket, game->pPacket)) {
-        ClientData response;
-        memcpy(&response, game->pPacket->data, sizeof(ClientData));
-        if (response.command == CONNECT) {
-            game->playerNumber = response.playerNumber;
-            SDL_Log("Connected as player %d", game->playerNumber);
-            return true;
+    while (SDL_GetTicks() - start < 3000) {
+        if (SDLNet_UDP_Recv(game->pSocket, game->pPacket)) {
+            ClientData response;
+            memcpy(&response, game->pPacket->data, sizeof(ClientData));
+            
+            if (response.command == CONNECT) {
+                game->playerNumber = response.playerNumber; 
+                SDL_Log("INFO: Connected as player %d", game->playerNumber);
+                return true;
+            }
         }
+        SDL_Delay(10);
     }
 
-    SDL_Log("No valid response from server");
-    SDLNet_FreePacket(game->pPacket);
-    SDLNet_UDP_Close(game->pSocket);
-    SDLNet_Quit();
+    *timedOut = true;
     return false;
 }
 
@@ -88,13 +67,49 @@ bool waitForServerResponse(Game *game, Uint32 timeout_ms) {
     SDLNet_UDP_AddSocket(socketSet, game->pSocket);
     int numready = SDLNet_CheckSockets(socketSet, timeout_ms);
 
-    SDLNet_FreeSocketSet(socketSet);
-
-    if (numready == -1) {
-        SDL_Log("SDLNet_CheckSockets error: %s", SDLNet_GetError());
-        return false;
+    if (numready > 0 && SDLNet_UDP_Recv(game->pSocket, game->pPacket)) {
+        ClientData response;
+        memcpy(&response, game->pPacket->data, sizeof(ClientData));
+        if (response.command == CONNECT) {
+            game->playerNumber = response.playerNumber;
+            SDL_Log("Connected as player %d", game->playerNumber);
+            SDLNet_FreeSocketSet(socketSet);
+            return true;
+        }
     }
 
-    return numready > 0;
+    SDLNet_FreeSocketSet(socketSet);
+    return false;
 }
 
+void receiveGameState(Game* game) {
+    if (SDLNet_UDP_Recv(game->pSocket, game->pPacket)) {
+        ServerData serverData;
+        SDL_Log("DEBUG: Mottaget paket med längd: %d (förväntat: %lu)", game->pPacket->len, sizeof(ServerData));
+
+        memcpy(&serverData, game->pPacket->data, game->pPacket->len < sizeof(ServerData) ? game->pPacket->len : sizeof(ServerData));
+
+        if (serverData.command == GAME_STATE) {
+            SDL_Log("DEBUG: serverData.command == GAME_STATE");
+            game->numOtherTanks = 0;
+
+            for (int i = 0; i < serverData.numPlayers; i++) {
+                SDL_Log("DEBUG: Kollar tank %d: playerNumber=%d (jag är %d)", i, serverData.tanks[i].playerNumber, game->playerNumber);
+                if (serverData.tanks[i].playerNumber == game->playerNumber) {
+                    if (!game->tank) {
+                        game->tank = createTank();
+                        SDL_Log("INFO: Klientens tank skapad (playerNumber=%d)", game->playerNumber);
+                    }
+                    SDL_Log("DEBUG: Uppdaterar tankens position och vinkel");
+                    setTankPosition(game->tank, serverData.tanks[i].x, serverData.tanks[i].y);
+                    setTankAngle(game->tank, serverData.tanks[i].angle);
+                    setTankColorId(game->tank, serverData.tanks[i].tankColorId);
+                } else {
+                    game->otherTanks[game->numOtherTanks++] = serverData.tanks[i];
+                }
+            }
+        } else {
+            SDL_Log("DEBUG: serverData.command != GAME_STATE (%d)", serverData.command);
+        }
+    }
+}

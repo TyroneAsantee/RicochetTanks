@@ -6,12 +6,15 @@
 #define MAX_PLAYERS 4
 
 typedef enum {
-    CONNECT,    // Klient vill ansluta
-    UPDATE,     // Klient skickar psotion/data
-    HEARTBEAT,  // Klienten håller sig vid liv
-    START_MATCH,    // Host startar spelet
-    GAME_STATE      // Server skickar spelstatus
+    CONNECT,
+    UPDATE,
+    HEARTBEAT
 } ClientCommand;
+
+typedef enum {
+    START_MATCH,
+    GAME_STATE
+} ServerCommand;
 
 typedef struct {
     ClientCommand command;
@@ -20,6 +23,7 @@ typedef struct {
     float y;
     float angle;
     bool shooting;
+    int tankColorId;
 } ClientData;
 
 typedef struct {
@@ -28,10 +32,11 @@ typedef struct {
     float y;
     float angle;
     bool shooting;
+    int tankColorId;
 } TankState;
 
 typedef struct {
-    ClientCommand command;
+    ServerCommand command;
     int numPlayers;
     TankState tanks[MAX_PLAYERS];
 } ServerData;

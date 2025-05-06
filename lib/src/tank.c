@@ -17,6 +17,7 @@ struct Tank {
     float velocityY;
     float angle;
     int health;
+    int colorId;
     bool alive;
 };
 
@@ -29,6 +30,7 @@ Tank* createTank(void) {
         tank->angle = 0;
         tank->health = 3;
         tank->alive = true;
+        tank->colorId = 0;
     }
     return tank;
 }
@@ -55,6 +57,16 @@ void setTankHealth(Tank* tank, int health) {
     }
 }
 
+void setTankColorId(Tank* tank, int colorId) {
+    if (tank) {
+        tank->colorId = colorId;
+    }
+}
+
+int getTankColorId(const Tank* tank) {
+    return tank ? tank->colorId : 0;
+}
+
 bool isTankAlive(Tank* tank) {
     return tank ? tank->alive : false;
 }
@@ -63,12 +75,12 @@ int getTankHealth(const Tank* tank) {
     return tank->health;
 }
 
-SDL_Rect getTankRect(Tank* tank) {
+SDL_Rect getTankRect(const Tank* tank) {
     if (tank) return tank->rect;
     return (SDL_Rect){0, 0, 0, 0};
 }
 
-float getTankAngle(Tank* tank) {
+float getTankAngle(const Tank* tank) {
     return tank ? tank->angle : 0.0f;
 }
 

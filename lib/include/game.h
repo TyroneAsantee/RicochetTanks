@@ -7,6 +7,7 @@
 #include "tank.h"
 #include "bullet.h"
 #include "wall.h"
+#define MAXTANKS 4
 
 typedef enum {
     STATE_MENU,
@@ -38,6 +39,9 @@ typedef struct {
     Wall* bottomLeft;
     Wall* bottomRight;
     GameState state;
+    TankState otherTanks[MAX_PLAYERS];
+    SDL_Texture* tankTextures[MAXTANKS];
+    int numOtherTanks;
 } Game;
 
 #endif

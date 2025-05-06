@@ -20,6 +20,8 @@ typedef struct {
     bool active;
 } PlayerStatus;
 
+extern volatile int connectedPlayerCount;
+
 bool initServer(void);
 void handleClientConnections(void);
 void checkPlayerHeartbeats(void);
