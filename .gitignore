@@ -3,6 +3,8 @@ spel
 *.o
 *.out
 *.exe
+clientspel
+serverspel
 
 # Backupfiler och systemfiler
 *~

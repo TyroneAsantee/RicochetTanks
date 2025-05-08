@@ -387,6 +387,11 @@ void run(Game *game){
         // RENDERING 
         SDL_RenderClear(game->pRenderer);
         SDL_RenderCopy(game->pRenderer, game->pBackground, NULL, NULL);
+        renderWall(game->pRenderer, game->topLeft);
+        renderWall(game->pRenderer, game->topRight);
+        renderWall(game->pRenderer, game->bottomLeft);
+        renderWall(game->pRenderer, game->bottomRight);
+
 
         // Rita andra spelares tanks
         for (int i = 0; i < game->numOtherTanks; i++) {

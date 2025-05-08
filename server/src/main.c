@@ -3,6 +3,7 @@
 #include <string.h>
 #include "tank_server.h"
 #include "network_protocol.h"
+#include "wall.h"
 
 #define SERVER_PORT 12345
 #define MAX_PLAYERS 4
@@ -15,6 +16,10 @@ int numConnectedPlayers = 0;
 static Tank* tanks[MAX_PLAYERS];
 static UDPsocket serverSocket;
 static UDPpacket *packet;
+Wall* topLeftWall;
+Wall* topRightWall;
+Wall* bottomLeftWall;
+Wall* bottomRightWall;
 
 bool initServer();
 void sendInitialGameData(Player *player);
@@ -50,6 +55,11 @@ int main(int argc, char* argv[]) {
         lastUpdate = now;
         SDL_Delay(10);
     }
+    
+    destroyWall(topLeftWall);
+    destroyWall(topRightWall);
+    destroyWall(bottomLeftWall);
+    destroyWall(bottomRightWall);
 
     return 0;
 }
@@ -72,6 +82,14 @@ bool initServer() {
         SDL_Log("SDLNet_AllocPacket: %s", SDLNet_GetError());
         return false;
     }
+
+    int thickness = 20;
+    int length = 80;
+
+    topLeftWall = createWall(100, 100, thickness, length, WALL_TOP_LEFT);
+    topRightWall = createWall(WINDOW_WIDTH - 100 - length, 100, thickness, length, WALL_TOP_RIGHT);
+    bottomLeftWall = createWall(100, WINDOW_HEIGHT - 100 - length, thickness, length, WALL_BOTTOM_LEFT);
+    bottomRightWall = createWall(WINDOW_WIDTH - 100 - length, WINDOW_HEIGHT - 100 - length, thickness, length, WALL_BOTTOM_RIGHT);
 
     return true;
 }
@@ -131,7 +149,35 @@ void handleClientConnections(float dt) {
                 SDL_Log("ERROR: Kunde inte skapa tank för spelare %d", index + 1);
                 continue;
             }
-            setTankPosition(tank, 100 + 100 * index, 100);
+            int margin = 10;
+            int tankW = 64, tankH = 64; // eller hämta från getTankRect()
+            int length = 80;
+
+            int x = 0, y = 0;
+
+            switch (index) {
+                case 0: // top left
+                    x = 100 + length + margin;
+                    y = 100 + length + margin;
+                    break;
+                case 1: // top right
+                    x = WINDOW_WIDTH - 100 - length - tankW - margin;
+                    y = 100 + length + margin;
+                    break;
+                case 2: // bottom left
+                    x = 100 + length + margin;
+                    y = WINDOW_HEIGHT - 100 - length - tankH - margin;
+                    break;
+                case 3: // bottom right
+                    x = WINDOW_WIDTH - 100 - length - tankW - margin;
+                    y = WINDOW_HEIGHT - 100 - length - tankH - margin;
+                    break;
+                default:
+                    x = 400; y = 300; // fallback om något blir knas
+                    break;
+            }
+
+            setTankPosition(tank, x, y);
             setTankColorId(tank, request.tankColorId);
             tanks[index] = tank;
 
@@ -254,7 +300,15 @@ void updateTanks(float dt) {
         if (rect.x > WINDOW_WIDTH - rect.w) rect.x = WINDOW_WIDTH - rect.w;
         if (rect.y > WINDOW_HEIGHT - rect.h) rect.y = WINDOW_HEIGHT - rect.h;
 
-        setTankPosition(tanks[i], rect.x, rect.y);
+        if (!wallCheckCollision(topLeftWall, &rect) &&
+            !wallCheckCollision(topRightWall, &rect) &&
+            !wallCheckCollision(bottomLeftWall, &rect) &&
+            !wallCheckCollision(bottomRightWall, &rect)) {
+            setTankPosition(tanks[i], rect.x, rect.y);
+        } else {
+            // Eventuellt logga kollision
+            SDL_Log("Tank %d krockade med vägg.", i + 1);
+        }
     }
 }
 
