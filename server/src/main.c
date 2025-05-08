@@ -18,29 +18,36 @@ static UDPpacket *packet;
 
 bool initServer();
 void sendInitialGameData(Player *player);
-void handleClientConnections();
+void handleClientConnections(float dt);
 void broadcastGameState();
 void checkPlayerHeartbeats();
+void updateTanks(float dt);
 int serverThread(void* data);
 
 int main(int argc, char* argv[]) {
+    Uint32 lastUpdate = SDL_GetTicks();
     if (!initServer()) {
         return -1;
     }
 
     Uint32 lastBroadcast = SDL_GetTicks();
     numConnectedPlayers = 0;
-    SDL_Log("INFO: sizeof(ClientData) = %lu", sizeof(ClientData));
 
     while (true) {
-        handleClientConnections();
+        Uint32 now = SDL_GetTicks();
+        float dt = (now - lastUpdate) / 1000.0f; 
+        if (dt > 0.05f) dt = 0.05f;
+
+        handleClientConnections(dt);  
         checkPlayerHeartbeats();
 
-        Uint32 now = SDL_GetTicks();
         if (now - lastBroadcast > 100) {
+            updateTanks(dt);
             broadcastGameState();
             lastBroadcast = now;
         }
+
+        lastUpdate = now;
         SDL_Delay(10);
     }
 
@@ -87,13 +94,12 @@ void sendInitialGameData(Player *player) {
     memcpy(initPacket->data, &initData, sizeof(GameInitData));
     initPacket->len = sizeof(GameInitData);
 
-    SDL_Log("84DEBUG: Förbereder att skicka GameInitData (START_MATCH) till spelare %d", player->playerID);
     SDLNet_UDP_Send(serverSocket, -1, initPacket);
 
     SDLNet_FreePacket(initPacket);
 }
 
-void handleClientConnections() {
+void handleClientConnections(float dt) {
     while (SDLNet_UDP_Recv(serverSocket, packet)) {
         ClientData request;
         memcpy(&request, packet->data, sizeof(ClientData));
@@ -144,45 +150,27 @@ void handleClientConnections() {
             packet->len = sizeof(ClientData);
             packet->address = newPlayer.address;
 
-            SDL_Log("139DEBUG: Förbereder att skicka CONNECT-svar till klient");
-            for (int i = 0; i < packet->len; i++) {
-                SDL_Log("Byte %d: %02X", i, packet->data[i]);
-            }
             SDLNet_UDP_Send(serverSocket, -1, packet);
 
             sendInitialGameData(&newPlayer);
+            SDL_Delay(100);
+            broadcastGameState();
+
         } else if (request.command == UPDATE) {
             int id = request.playerNumber;
             if (id >= 1 && id <= MAX_PLAYERS) {
                 int i = id - 1;
-
-                if (tanks[i]) {
-                    float dt = 0.1f;
-                    float speed = 100.0f;
-                    float angleRad = request.angle * M_PI / 180.0f;
-                    float dx = cosf(angleRad) * speed * dt;
-                    float dy = sinf(angleRad) * speed * dt;
-
-                    SDL_Rect rect = getTankRect(tanks[i]);
-
-                    SDL_Log("UPDATE från spelare %d – vinkel: %.2f | up: %d | down: %d",
-                            request.playerNumber, request.angle, request.up, request.down);
-
-                    if (request.up) {
-                        setTankPosition(tanks[i], rect.x + dx, rect.y + dy);
-                    }
-                    if (request.down) {
-                        setTankPosition(tanks[i], rect.x - dx, rect.y - dy);
-                    }
-
-                    setTankAngle(tanks[i], request.angle);
-                }
-
+                playerStatus[i].up = request.up;
+                playerStatus[i].down = request.down;
+                playerStatus[i].left = request.left;
+                playerStatus[i].right = request.right;
+                playerStatus[i].angle = request.angle;
                 playerStatus[i].lastHeartbeat = SDL_GetTicks();
             }
         }
     }
 }
+
 
 void broadcastGameState() {
     ServerData gameState;
@@ -198,7 +186,7 @@ void broadcastGameState() {
             gameState.tanks[activeTankCount].angle = getTankAngle(tanks[i]);
             gameState.tanks[activeTankCount].shooting = false;
             gameState.tanks[activeTankCount].tankColorId = getTankColorId(tanks[i]);
-            SDL_Log("Tank %d: x=%d y=%d angle=%.2f", i + 1, rect.x, rect.y, getTankAngle(tanks[i]));
+            SDL_Log("204Tank %d: x=%d y=%d angle=%.2f", i + 1, rect.x, rect.y, getTankAngle(tanks[i]));
             activeTankCount++;
         }
     }
@@ -213,9 +201,7 @@ void broadcastGameState() {
         memcpy(packet->data, &gameState, sizeof(ServerData));
         packet->len = sizeof(ServerData);
 
-        SDL_Log("Rad208: DEBUG: Skickar ServerData med len=%d (ska vara %zu)", packet->len, sizeof(ServerData));
         SDLNet_UDP_Send(serverSocket, -1, packet);
-        SDL_Log("Sent state to player %d", connectedPlayers[i].playerID);
     }
 }
 
@@ -227,6 +213,48 @@ void checkPlayerHeartbeats() {
             connectedPlayers[i].active = false;
             SDL_Log("Player %d disconnected due to timeout.", connectedPlayers[i].playerID);
         }
+    }
+}
+
+void updateTanks(float dt) {
+    for (int i = 0; i < MAX_PLAYERS; i++) {
+        if (!connectedPlayers[i].active || !tanks[i]) continue;
+
+        float angle = playerStatus[i].angle;
+
+        // Rotation
+        if (playerStatus[i].left && !playerStatus[i].right) {
+            angle -= 10.0f;
+        } else if (playerStatus[i].right && !playerStatus[i].left) {
+            angle += 10.0f;
+        }
+
+        setTankAngle(tanks[i], angle);
+
+        // Rörelse
+        float speed = 800.0f;
+        float radians = (angle - 90.0f) * M_PI / 180.0f;
+        float dx = 0, dy = 0;
+
+        if (playerStatus[i].up && !playerStatus[i].down) {
+            dx = cosf(radians) * speed * dt;
+            dy = sinf(radians) * speed * dt;
+        } else if (playerStatus[i].down && !playerStatus[i].up) {
+            dx = -cosf(radians) * speed * dt;
+            dy = -sinf(radians) * speed * dt;
+        }
+
+        SDL_Rect rect = getTankRect(tanks[i]);
+        rect.x += dx;
+        rect.y += dy;
+
+        // Begränsningar
+        if (rect.x < 0) rect.x = 0;
+        if (rect.y < 0) rect.y = 0;
+        if (rect.x > WINDOW_WIDTH - rect.w) rect.x = WINDOW_WIDTH - rect.w;
+        if (rect.y > WINDOW_HEIGHT - rect.h) rect.y = WINDOW_HEIGHT - rect.h;
+
+        setTankPosition(tanks[i], rect.x, rect.y);
     }
 }
 

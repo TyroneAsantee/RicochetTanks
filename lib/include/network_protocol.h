@@ -23,6 +23,8 @@ typedef struct {
     float angle;
     bool up;
     bool down;
+    bool left;
+    bool right;
     bool shooting;
     int tankColorId;
 } ClientData;

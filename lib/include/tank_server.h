@@ -14,6 +14,8 @@ typedef struct {
 typedef struct {
     Uint32 lastHeartbeat;
     bool active;
+    bool up, down, left, right;
+    float angle;
 } PlayerStatus;
 
 typedef struct Tank Tank;
