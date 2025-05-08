@@ -1,6 +1,7 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
 #include <SDL2/SDL_ttf.h>
+#include <SDL2/SDL_net.h>
 #include <stdbool.h>
 #include <math.h>
 #include "tank.h"
@@ -9,9 +10,8 @@
 #include "collision.h"
 #include "text.h"
 #include "wall.h"
-#include "client.h"
 #include "network_protocol.h"
-#include "game.h"
+#include "tank_server.h"
 
 #ifdef _WIN32
 #include <SDL2/SDL_main.h>
@@ -36,6 +36,40 @@ typedef enum {
    DIALOG_RESULT_CANCEL
 } DialogResult;
 
+typedef enum {
+    STATE_MENU,
+    STATE_RUNNING,
+    STATE_SELECT_TANK,
+    STATE_EXIT
+} GameState;
+
+typedef struct {
+    SDL_Window *pWindow;
+    SDL_Renderer *pRenderer;
+    SDL_Texture *pBackground;
+    SDL_Texture *pTankpicture;
+    SDL_Event event;
+    float angle;
+    Timer timer;
+    Tank* tank;
+    Bullet bullets[MAX_BULLETS];
+    UDPsocket pSocket;
+    IPaddress serverAddress;
+    UDPpacket *pPacket;
+    int playerNumber;
+    int tankColorId;
+    int bulletstopper;
+    int lastshottime;
+    char ipAddress[64];
+    Wall* topLeft;
+    Wall* topRight;
+    Wall* bottomLeft;
+    Wall* bottomRight;
+    GameState state;
+    TankState otherTanks[MAX_PLAYERS];
+    SDL_Texture* tankTextures[MAXTANKS];
+    int numOtherTanks;
+} Game;
 
 
 void initiate(Game* game);
@@ -46,7 +80,9 @@ void enterServerIp(Game* game);
 void selectTank(Game* game);
 void loadSelectedTankTexture(Game* game);
 void closeGame(Game* game);
-bool waitForServerResponse(Game *game, Uint32 timeout_ms);
+bool connectToServer(Game* game, const char* ip, bool *timedOut);
+void receiveGameState(Game* game);
+void sendClientUpdate(Game* game);
 DialogResult showErrorDialog(Game* game, const char* title, const char* message);
 
 
@@ -54,14 +90,13 @@ int main(int argv, char* args[]) {
    Game game;
    initiate(&game);
 
-
    while (game.state != STATE_EXIT) {
+        SDL_Log("Main loop: game->state = %d", game.state);  //
        switch (game.state) {
            case STATE_MENU:
                runMainMenu(&game);
                break;
            case STATE_RUNNING:
-                SDL_Log("DEBUG: main() går in i run()");
                run(&game);
                break;
            case STATE_SELECT_TANK:
@@ -240,12 +275,9 @@ void runMainMenu(Game* game) {
                         bool timedOut = false;
                         SDL_Log("INFO: Försöker ansluta till %s...", game->ipAddress);
                         if (connectToServer(game, game->ipAddress, &timedOut)) {
-                            SDL_Log("INFO: Anslutning lyckades, går vidare till STATE_RUNNING");
                             loadSelectedTankTexture(game);
                             game->state = STATE_RUNNING;
-                            SDL_Log("DEBUG: runMainMenu satte state till STATE_RUNNING");
                             inMenu = false;
-                            tryConnect = false;
                         } else {
                             SDL_Log("ERROR: connectToServer() misslyckades. timedOut=%d", timedOut);
                             DialogResult result = showErrorDialog(game, "ERROR", timedOut ? "Could not connect to server." : "Connection failed.");
@@ -286,8 +318,7 @@ void runMainMenu(Game* game) {
     SDL_DestroyTexture(btnExit);
 }
 
-void run(Game *game)
-{
+void run(Game *game){
     Uint32 start = SDL_GetTicks();
     while (!game->tank && SDL_GetTicks() - start < 3000) {
         receiveGameState(game);
@@ -298,24 +329,13 @@ void run(Game *game)
         game->state = STATE_MENU;
         return;
     }
-    SDL_Log("DEBUG: run() - innan getTankRect");
-    SDL_Rect tankRect = getTankRect(game->tank);
-    SDL_Log("DEBUG: tankRect: x=%d y=%d w=%d h=%d", tankRect.x, tankRect.y, tankRect.w, tankRect.h);
+    SDL_Log("Inne i run()");
 
-    float shipX = tankRect.x;
-    float shipY = tankRect.y;
-    
-    SDL_Log("DEBUG: run() - innan getTankAngle");
-    float angle = getTankAngle(game->tank);
-    SDL_Log("DEBUG: run() - efter getTankAngle");
-
-    float shipVelocityX = 0;
-    float shipVelocityY = 0;
     bool closeWindow = false;
     bool up = false, down = false;
+
     int thickness = 20;
     int length = 80;
-
     game->topLeft = createWall(100, 100, thickness, length, WALL_TOP_LEFT);
     game->topRight = createWall(WINDOW_WIDTH - 100 - length, 100, thickness, length, WALL_TOP_RIGHT);
     game->bottomLeft = createWall(100, WINDOW_HEIGHT - 100 - length, thickness, length, WALL_BOTTOM_LEFT);
@@ -335,161 +355,82 @@ void run(Game *game)
 
                 case SDL_KEYDOWN:
                     switch (game->event.key.keysym.scancode) {
-                        case SDL_SCANCODE_SPACE:
-                            if (SDL_GetTicks() - game->lastshottime > 200) {
-                                for (int i = 0; i < MAX_BULLETS; i++) {
-                                    if (!game->bullets[i].active) {
-                                        fireBullet(&game->bullets[i], shipX + tankRect.w / 2, shipY + tankRect.h / 2, angle, game->playerNumber);
-                                        game->lastshottime = SDL_GetTicks();
-                                        break;
-                                    }
-                                }
-                            }
-                            break;
-                        case SDL_SCANCODE_W:
-                        case SDL_SCANCODE_UP:
-                            up = true;
-                            break;
-                        case SDL_SCANCODE_S:
-                        case SDL_SCANCODE_DOWN:
-                            down = true;
-                            break;
-                        case SDL_SCANCODE_A:
-                        case SDL_SCANCODE_LEFT:
-                            angle -= 10.0f;
-                            break;
-                        case SDL_SCANCODE_D:
-                        case SDL_SCANCODE_RIGHT:
-                            angle += 10.0f;
-                            break;
+                        case SDL_SCANCODE_W: up = true; break;
+                        case SDL_SCANCODE_S: down = true; break;
                         case SDL_SCANCODE_ESCAPE:
-                            game->state = STATE_MENU;
                             closeWindow = true;
+                            game->state = STATE_MENU;
                             break;
-                        default:
-                            break;
+                        default: break;
                     }
                     break;
+
                 case SDL_KEYUP:
                     switch (game->event.key.keysym.scancode) {
-                        case SDL_SCANCODE_W:
-                        case SDL_SCANCODE_UP:
-                            up = false;
-                            break;
-                        case SDL_SCANCODE_S:
-                        case SDL_SCANCODE_DOWN:
-                            down = false;
-                            break;
-                        default:
-                            break;
+                        case SDL_SCANCODE_W: up = false; break;
+                        case SDL_SCANCODE_S: down = false; break;
+                        default: break;
                     }
                     break;
             }
         }
 
-        shipVelocityX = 0;
-        shipVelocityY = 0;
+        if (game->tank) {
+            float speed = SPEED * dt;
+            float angleRad = getTankAngle(game->tank) * M_PI / 180.0f;
+            float dx = cosf(angleRad) * speed;
+            float dy = sinf(angleRad) * speed;
 
-        if (up && !down) {
-            float radians = (angle - 90.0f) * M_PI / 180.0f;
-            shipVelocityX = cos(radians) * SPEED;
-            shipVelocityY = sin(radians) * SPEED;
-        }
-        if (down && !up) {
-            float radians = (angle - 90.0f) * M_PI / 180.0f;
-            shipVelocityX = -cos(radians) * SPEED;
-            shipVelocityY = -sin(radians) * SPEED;
-        }
+            SDL_Rect rect = getTankRect(game->tank);
+            if (up) {
+                rect.x += dx;
+                rect.y += dy;
+            }
+            if (down) {
+                rect.x -= dx;
+                rect.y -= dy;
+            }
+            setTankPosition(game->tank, rect.x, rect.y);
 
-        // Tank-kollision mot väggar
-        SDL_Rect futureTank = getTankRect(game->tank);
-        futureTank.x = (int)(shipX + shipVelocityX * dt);
-        futureTank.y = (int)(shipY + shipVelocityY * dt);
-
-        if (!wallCheckCollision(game->topLeft, &futureTank) &&
-            !wallCheckCollision(game->topRight, &futureTank) &&
-            !wallCheckCollision(game->bottomLeft, &futureTank) &&
-            !wallCheckCollision(game->bottomRight, &futureTank)) {
-            shipX += shipVelocityX * dt;
-            shipY += shipVelocityY * dt;
+            sendClientUpdate(game);
         }
 
-        if (shipX < 0) shipX = 0;
-        if (shipY < 0) shipY = 0;
-        if (shipX > WINDOW_WIDTH - tankRect.w) shipX = WINDOW_WIDTH - tankRect.w;
-        if (shipY > WINDOW_HEIGHT - tankRect.h) shipY = WINDOW_HEIGHT - tankRect.h;
-
-        SDL_Log("DEBUG: run() - innan setTankPosition (%.2f, %.2f)", shipX, shipY);
-        setTankPosition(game->tank, shipX, shipY);
-        SDL_Log("DEBUG: run() - efter setTankPosition");
-
-
-        setTankAngle(game->tank, angle);
-
+        // RENDERING 
         SDL_RenderClear(game->pRenderer);
         SDL_RenderCopy(game->pRenderer, game->pBackground, NULL, NULL);
 
-        renderWall(game->pRenderer, game->topLeft);
-        renderWall(game->pRenderer, game->topRight);
-        renderWall(game->pRenderer, game->bottomLeft);
-        renderWall(game->pRenderer, game->bottomRight);
-
+        // Rita andra spelares tanks
         for (int i = 0; i < game->numOtherTanks; i++) {
-            TankState t = game->otherTanks[i];
-            SDL_Rect otherRect = { t.x, t.y, 64, 64 };
-
-            int id = t.tankColorId;
-            if (id < 0 || id >= MAXTANKS) id = 0;
-
-            SDL_Texture* tex = game->tankTextures[id];
-            SDL_RenderCopyEx(game->pRenderer, tex, NULL, &otherRect, t.angle, NULL, SDL_FLIP_NONE);
+            TankState *tank = &game->otherTanks[i];
+            SDL_Rect rect = { tank->x, tank->y, 64, 64 };
+            SDL_RenderCopyEx(
+                game->pRenderer,
+                game->tankTextures[tank->tankColorId],
+                NULL, &rect,
+                tank->angle,
+                NULL,
+                SDL_FLIP_NONE
+            );
         }
 
-        if (isTankAlive(game->tank)) {
-            drawTank(game->pRenderer, game->tank, game->pTankpicture);
-            renderTankHealth(game->pRenderer, getTankHealth(game->tank));
-        }
-
-        for (int i = 0; i < MAX_BULLETS; i++) {
-            updateBullet(&game->bullets[i], dt);
-            if (game->bullets[i].active) {
-                SDL_Rect bulletRect = {
-                    (int)game->bullets[i].rect.x,
-                    (int)game->bullets[i].rect.y,
-                    (int)game->bullets[i].rect.w,
-                    (int)game->bullets[i].rect.h
-                };
-
-                if (wallCheckCollision(game->topLeft, &bulletRect) ||
-                    wallCheckCollision(game->topRight, &bulletRect) ||
-                    wallCheckCollision(game->bottomLeft, &bulletRect) ||
-                    wallCheckCollision(game->bottomRight, &bulletRect)) {
-
-                    if (wallHitsVertical(game->topLeft, game->topRight, game->bottomLeft, game->bottomRight, &bulletRect)) {
-                        game->bullets[i].velocityX *= -1;
-                    }
-                    if (wallHitsHorizontal(game->topLeft, game->topRight, game->bottomLeft, game->bottomRight, &bulletRect)) {
-                        game->bullets[i].velocityY *= -1;
-                    }
-                }
-
-                SDL_Rect tankRect = getTankRect(game->tank);
-                SDL_FRect bulletFRect = game->bullets[i].rect;
-
-                if (game->bullets[i].ownerId != game->playerNumber && checkCollision(&tankRect, &bulletFRect)) {
-                    game->bullets[i].active = false;
-                    // Här kan du också lägga till logik för att ta skada:
-                    int currentHP = getTankHealth(game->tank);
-                    setTankHealth(game->tank, currentHP - 1);
-                }
-            }
-            renderBullet(game->pRenderer, &game->bullets[i]);
+        // Rita din egen tank
+        if (game->tank) {
+            SDL_Rect rect = getTankRect(game->tank);
+            SDL_RenderCopyEx(
+                game->pRenderer,
+                game->tankTextures[getTankColorId(game->tank)],
+                NULL, &rect,
+                getTankAngle(game->tank),
+                NULL,
+                SDL_FLIP_NONE
+            );
         }
 
         SDL_RenderPresent(game->pRenderer);
-        SDL_Delay(1000 / 60);
+        SDL_Delay(16);
     }
 }
+
 
 
 void selectTank(Game* game) {
@@ -516,14 +457,11 @@ void selectTank(Game* game) {
    float swingSpeed = 30.0f;
    float maxSwingAngle = 5.0f;
 
-
    initiate_timer(&game->timer);
-
 
    while (selecting) {
        update_timer(&game->timer);
        float dt = get_timer(&game->timer);
-
 
        while (SDL_PollEvent(&game->event)) {
            if (game->event.type == SDL_QUIT) {
@@ -551,7 +489,6 @@ void selectTank(Game* game) {
                }
            }
        }
-
 
        if (swingRight) {
            angle += swingSpeed * dt;
@@ -672,6 +609,140 @@ DialogResult showErrorDialog(Game* game, const char* title, const char* message)
     SDL_DestroyTexture(messageTexture);
     TTF_CloseFont(font);
     return result;
+}
+
+bool connectToServer(Game* game, const char* ip, bool *timedOut) {
+    IPaddress serverIP;
+    if (SDLNet_ResolveHost(&serverIP, ip, SERVER_PORT) == -1) {
+        SDL_Log("SDLNet_ResolveHost: %s", SDLNet_GetError());
+        return false;
+    }
+    game->serverAddress = serverIP;
+
+    game->pSocket = SDLNet_UDP_Open(0);
+    if (!game->pSocket) {
+        SDL_Log("SDLNet_UDP_Open: %s", SDLNet_GetError());
+        return false;
+    }
+
+    game->pPacket = SDLNet_AllocPacket(sizeof(ServerData));
+    if (!game->pPacket) {
+        SDL_Log("SDLNet_AllocPacket: %s", SDLNet_GetError());
+        return false;
+    }
+
+    ClientData request = { CONNECT };
+    request.tankColorId = game->tankColorId;
+
+    memcpy(game->pPacket->data, &request, sizeof(ClientData));
+    game->pPacket->len = sizeof(ClientData);
+    game->pPacket->address = serverIP;
+
+    SDL_Log("Skickar ClientData med len=%d (ska vara %zu)", game->pPacket->len, sizeof(ClientData));
+    SDLNet_UDP_Send(game->pSocket, -1, game->pPacket);
+
+    Uint32 start = SDL_GetTicks();
+    *timedOut = false;
+    bool gotConnectResponse = false;
+
+    while (SDL_GetTicks() - start < 3000) {
+        if (SDLNet_UDP_Recv(game->pSocket, game->pPacket)) {
+            ServerCommand command;
+            memcpy(&command, game->pPacket->data, sizeof(ServerCommand));
+
+            if (!gotConnectResponse && game->pPacket->len == sizeof(ClientData)) {
+                ClientData response;
+                memcpy(&response, game->pPacket->data, sizeof(ClientData));
+                if (response.command == CONNECT) {
+                    game->playerNumber = response.playerNumber;
+                    SDL_Log("Connected as player %d", game->playerNumber);
+                    gotConnectResponse = true;
+                }
+            }
+
+            if (command == START_MATCH && game->pPacket->len == sizeof(GameInitData)) {
+                GameInitData initData;
+                memcpy(&initData, game->pPacket->data, sizeof(GameInitData));
+                game->playerNumber = initData.playerID;
+                SDL_Log("668Mottog START_MATCH – playerNumber: %d, arena: %dx%d",
+                        initData.playerID, initData.arenaWidth, initData.arenaHeight);
+                return true;
+            }
+
+            SDL_Log("Ignorerar inkommande paket – command=%d, len=%d", command, game->pPacket->len);
+        }
+        SDL_Delay(10);
+    }
+
+    *timedOut = true;
+    SDL_Log("ERROR: Timeout – inget START_MATCH mottaget");
+    return false;
+}
+
+
+void receiveGameState(Game* game) {
+    if (SDLNet_UDP_Recv(game->pSocket, game->pPacket)) {
+        if (game->pPacket->len < sizeof(ServerCommand)) {
+            SDL_Log("WARN: Paket för kort (%d byte) för att ens innehålla ett ServerCommand", game->pPacket->len);
+            return;
+        }
+
+        ServerCommand command;
+        memcpy(&command, game->pPacket->data, sizeof(ServerCommand));
+
+        if (command == GAME_STATE && game->pPacket->len == sizeof(ServerData)) {
+            ServerData serverData;
+            memcpy(&serverData, game->pPacket->data, sizeof(ServerData));
+
+            SDL_Log("DEBUG: Mottaget GAME_STATE med %d spelare", serverData.numPlayers);
+            game->numOtherTanks = 0;
+
+            for (int i = 0; i < serverData.numPlayers; i++) {
+                SDL_Log("DEBUG: Tank %d – playerNumber=%d (jag är %d)", i, serverData.tanks[i].playerNumber, game->playerNumber);
+
+                if (serverData.tanks[i].playerNumber == game->playerNumber) {
+                    if (!game->tank) {
+                        game->tank = createTank();
+                        SDL_Log("INFO: Klientens tank skapad (playerNumber=%d)", game->playerNumber);
+                    }
+
+                    setTankPosition(game->tank, serverData.tanks[i].x, serverData.tanks[i].y);
+                    setTankAngle(game->tank, serverData.tanks[i].angle);
+                    setTankColorId(game->tank, serverData.tanks[i].tankColorId);
+                } else {
+                    game->otherTanks[game->numOtherTanks++] = serverData.tanks[i];
+                }
+            }
+        } else {
+            SDL_Log("WARN: Mottog ogiltigt eller okänt kommando (command=%d, len=%d)", command, game->pPacket->len);
+        }
+    }
+}
+
+void sendClientUpdate(Game* game) {
+    if (!game || !game->pSocket || !game->pPacket || !game->tank) return;
+
+    ClientData data;
+    memset(&data, 0, sizeof(ClientData));
+
+    data.command = UPDATE;
+    data.playerNumber = game->playerNumber;
+    data.angle = getTankAngle(game->tank);
+    data.up = false;
+    data.down = false;
+    data.shooting = false;
+    data.tankColorId = game->tankColorId;
+
+    const Uint8* keys = SDL_GetKeyboardState(NULL);
+    if (keys[SDL_SCANCODE_W]) data.up = true;
+    if (keys[SDL_SCANCODE_S]) data.down = true;
+
+    memcpy(game->pPacket->data, &data, sizeof(ClientData));
+    game->pPacket->len = sizeof(ClientData);
+    game->pPacket->address = game->serverAddress;
+
+    SDL_Log("Rad749:DEBUG: Skickar ClientData med len=%d (ska vara %zu)", game->pPacket->len, sizeof(ClientData));
+    SDLNet_UDP_Send(game->pSocket, -1, game->pPacket);
 }
 
 
