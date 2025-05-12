@@ -894,12 +894,9 @@ void sendClientUpdate(Game* game) {
     game->pPacket->len = sizeof(ClientData);
     game->pPacket->address = game->serverAddress;
 
-    SDL_Log("Skickar ClientData – angle: %.2f | up: %d | down: %d | left: %d | right: %d",
-            data.angle, data.up, data.down, data.left, data.right);
 
     SDLNet_UDP_Send(game->pSocket, -1, game->pPacket);
 }
-
 
 
 void closeGame(Game *game)
