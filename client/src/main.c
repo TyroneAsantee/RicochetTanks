@@ -38,6 +38,7 @@ typedef enum {
 
 typedef enum {
     STATE_MENU,
+    STATE_SINGLE_PLAYER,
     STATE_RUNNING,
     STATE_SELECT_TANK,
     STATE_EXIT
@@ -79,6 +80,7 @@ void runMainMenu(Game* game);
 void enterServerIp(Game* game);
 void selectTank(Game* game);
 void loadSelectedTankTexture(Game* game);
+void runSinglePlayer(Game *game);
 void closeGame(Game* game);
 bool connectToServer(Game* game, const char* ip, bool *timedOut);
 void receiveGameState(Game* game);
@@ -92,13 +94,16 @@ int main(int argv, char* args[]) {
 
    while (game.state != STATE_EXIT) {
        switch (game.state) {
-           case STATE_MENU:
+        case STATE_MENU:
                runMainMenu(&game);
                break;
-           case STATE_RUNNING:
+        case STATE_SINGLE_PLAYER: 
+               runSinglePlayer(&game);
+               break;
+        case STATE_RUNNING:
                run(&game);
                break;
-           case STATE_SELECT_TANK:
+        case STATE_SELECT_TANK:
                selectTank(&game);
                break;
            default:
@@ -195,7 +200,7 @@ void runMainMenu(Game* game) {
     bool inMenu = true;
 
     SDL_Texture* bg = IMG_LoadTexture(game->pRenderer, "../lib/resources/menu_bg.png");
-    SDL_Texture* btnHost = IMG_LoadTexture(game->pRenderer, "../lib/resources/btn_host.png");
+    SDL_Texture* btnHost = IMG_LoadTexture(game->pRenderer, "../lib/resources/Please3.png");
     SDL_Texture* btnConnect = IMG_LoadTexture(game->pRenderer, "../lib/resources/btn_connect.png");
     SDL_Texture* btnSelectTank = IMG_LoadTexture(game->pRenderer, "../lib/resources/btn_select_tank.png");
     SDL_Texture* btnExit = IMG_LoadTexture(game->pRenderer, "../lib/resources/btn_exit.png");
@@ -217,55 +222,10 @@ void runMainMenu(Game* game) {
                 if (SDL_PointInRect(&(SDL_Point){x, y}, &rectHost)) {
                     
                     SDL_Delay(200);
-                    bool timedOut;
-                    if (!connectToServer(game, game->ipAddress, &timedOut)) {
-                        SDL_Log("Host kunde inte ansluta till sin egen server.");
-                        return;
-                    }
-                    SDL_Texture* bgWait = IMG_LoadTexture(game->pRenderer, "../lib/resources/menu_bg.png");
-                    bool waiting = true;
-
-                    while (waiting && connectedPlayers < MAX_PLAYERS) {
-                        while (SDL_PollEvent(&game->event)) {
-                            if (game->event.type == SDL_QUIT || 
-                                (game->event.type == SDL_KEYDOWN && game->event.key.keysym.sym == SDLK_ESCAPE)) {
-                                game->state = STATE_MENU;
-                                inMenu = true;
-                                waiting = false;
-                                break;
-                            }
-
-                            if (game->event.type == SDL_KEYDOWN && game->event.key.keysym.sym == SDLK_SPACE) {
-                                    loadSelectedTankTexture(game);
-                                    game->state = STATE_RUNNING;
-                                    inMenu = false;
-                                    waiting = false;
-                                    break;
-                            }
-                        }
-
-                        SDL_RenderClear(game->pRenderer);
-                        SDL_RenderCopy(game->pRenderer, bgWait, NULL, NULL);
-
-                        SDL_Color white = {255, 255, 255, 255};
-                        char statusText[64];
-                        snprintf(statusText, sizeof(statusText), "Waiting for players... %d/%d players", connectedPlayers, MAX_PLAYERS);
-                        renderText(game->pRenderer, statusText, 200, 300, white);
-                        renderText(game->pRenderer, "Press ESC to cancel", 200, 360, white);
-                        SDL_RenderPresent(game->pRenderer);
-                        SDL_Delay(100);
-                    }
-
-                    SDL_DestroyTexture(bgWait);
-
-                    if (connectedPlayers >= MAX_PLAYERS && game->state != STATE_EXIT) {
-                        loadSelectedTankTexture(game);
-                        game->state = STATE_RUNNING;
-                        inMenu = false;
-                    } else {
-                        connectedPlayers = 0;
-                        SDLNet_Quit();
-                    }
+                    
+                    loadSelectedTankTexture(game);
+                    game->state = STATE_SINGLE_PLAYER;
+                    inMenu = false;
 
                 } else if (SDL_PointInRect(&(SDL_Point){x, y}, &rectConnect)) {
                     enterServerIp(game);
@@ -323,6 +283,197 @@ void runMainMenu(Game* game) {
     SDL_DestroyTexture(btnExit);
 }
 
+void runSinglePlayer(Game *game) {
+    game->tank = createTank();
+    setTankPosition(game->tank, 400, 300);  // centrera
+    setTankAngle(game->tank, 0);
+    setTankColorId(game->tank, game->tankColorId);
+
+    SDL_Rect tankRect = getTankRect(game->tank);
+    float shipX = tankRect.x;
+    float shipY = tankRect.y;
+    float angle = getTankAngle(game->tank);
+    float shipVelocityX = 0;
+    float shipVelocityY = 0;
+    bool closeWindow = false;
+    bool up = false, down = false;
+    int thickness = 20;
+    int length = 80;
+
+    game->topLeft = createWall(100, 100, thickness, length, WALL_TOP_LEFT);
+    game->topRight = createWall(WINDOW_WIDTH - 100 - length, 100, thickness, length, WALL_TOP_RIGHT);
+    game->bottomLeft = createWall(100, WINDOW_HEIGHT - 100 - length, thickness, length, WALL_BOTTOM_LEFT);
+    game->bottomRight = createWall(WINDOW_WIDTH - 100 - length, WINDOW_HEIGHT - 100 - length, thickness, length, WALL_BOTTOM_RIGHT);
+
+    while (!closeWindow) {
+        update_timer(&game->timer);
+        float dt = get_timer(&game->timer);
+
+        while (SDL_PollEvent(&game->event)) {
+            switch (game->event.type) {
+                case SDL_QUIT:
+                    closeWindow = true;
+                    game->state = STATE_EXIT;
+                    break;
+
+                case SDL_KEYDOWN:
+                    switch (game->event.key.keysym.scancode) {
+                        case SDL_SCANCODE_SPACE:
+                            game->bulletstopper = 0;
+                            if(game->bulletstopper == 0)
+                            {
+                                if(SDL_GetTicks() - game->lastshottime > 700)
+                                {
+                                    for(int i = 0;i < MAX_BULLETS;i++)
+                                    {
+                                        if(!game->bullets[i].active)
+                                        {
+                                            fireBullet(&game->bullets[i], shipX + tankRect.w / 2, shipY + tankRect.h / 2, angle, 0);
+                                            game->lastshottime = SDL_GetTicks();
+                                            break;
+                                        }
+                                    }
+                                    game->bulletstopper = 1;
+                                }
+                            }
+                            break;
+                        case SDL_SCANCODE_W:
+                        case SDL_SCANCODE_UP:
+                            up = true;
+                            break;
+                        case SDL_SCANCODE_S:
+                        case SDL_SCANCODE_DOWN:
+                            down = true;
+                            break;
+                        case SDL_SCANCODE_A:
+                        case SDL_SCANCODE_LEFT:
+                            angle -= 10.0f;
+                            break;
+                        case SDL_SCANCODE_D:
+                        case SDL_SCANCODE_RIGHT:
+                            angle += 10.0f;
+                            break;
+                        default:
+                            break;
+                        case SDL_SCANCODE_ESCAPE:
+                            game->state = STATE_MENU;
+                            closeWindow = true;
+                            break;
+                    }
+                    break;
+                case SDL_KEYUP:
+                    switch (game->event.key.keysym.scancode) {
+                        case SDL_SCANCODE_W:
+                        case SDL_SCANCODE_UP:
+                            up = false;
+                            break;
+                        case SDL_SCANCODE_S:
+                        case SDL_SCANCODE_DOWN:
+                            down = false;
+                            break;
+                        default:
+                            break;
+                    }
+                    break;
+            }
+        }
+
+        shipVelocityX = 0;
+        shipVelocityY = 0;
+
+        if (up && !down) {
+            float radians = (angle - 90.0f) * M_PI / 180.0f;
+            shipVelocityX = cos(radians) * SPEED;
+            shipVelocityY = sin(radians) * SPEED;
+        }
+        if (down && !up) {
+            float radians = (angle - 90.0f) * M_PI / 180.0f;
+            shipVelocityX = -cos(radians) * SPEED;
+            shipVelocityY = -sin(radians) * SPEED;
+        }
+
+        SDL_Rect futureTank = getTankRect(game->tank);
+        futureTank.x = (int)(shipX + shipVelocityX * dt);
+        futureTank.y = (int)(shipY + shipVelocityY * dt);
+
+        if (!wallCheckCollision(game->topLeft, &futureTank) &&
+            !wallCheckCollision(game->topRight, &futureTank) &&
+            !wallCheckCollision(game->bottomLeft, &futureTank) &&
+            !wallCheckCollision(game->bottomRight, &futureTank)) 
+        {
+            shipX += shipVelocityX * dt;
+            shipY += shipVelocityY * dt;
+        }
+
+        if (shipX < 0) shipX = 0;
+        if (shipY < 0) shipY = 0;
+        if (shipX > WINDOW_WIDTH - tankRect.w) shipX = WINDOW_WIDTH - tankRect.w;
+        if (shipY > WINDOW_HEIGHT - tankRect.h) shipY = WINDOW_HEIGHT - tankRect.h;
+
+        if (shipX < 0) shipX = 0;
+        if (shipY < 0) shipY = 0;
+        if (shipX > WINDOW_WIDTH - tankRect.w) shipX = WINDOW_WIDTH - tankRect.w;
+        if (shipY > WINDOW_HEIGHT - tankRect.h) shipY = WINDOW_HEIGHT - tankRect.h;
+
+        setTankPosition(game->tank, shipX, shipY);
+        setTankAngle(game->tank, angle);
+
+        SDL_RenderClear(game->pRenderer);
+        SDL_RenderCopy(game->pRenderer, game->pBackground, NULL, NULL);
+
+        renderWall(game->pRenderer, game->topLeft);
+        renderWall(game->pRenderer, game->topRight);
+        renderWall(game->pRenderer, game->bottomLeft);
+        renderWall(game->pRenderer, game->bottomRight);
+
+
+        if (isTankAlive(game->tank)) {
+            drawTank(game->pRenderer, game->tank, game->pTankpicture);
+            renderTankHealth(game->pRenderer, 3);  
+        }
+
+        for (int i = 0; i < MAX_BULLETS; i++) {
+            updateBullet(&game->bullets[i], dt);
+            if (game->bullets[i].active) {
+                SDL_Rect bulletRect = {
+                    (int)game->bullets[i].rect.x,
+                    (int)game->bullets[i].rect.y,
+                    (int)game->bullets[i].rect.w,
+                    (int)game->bullets[i].rect.h
+                };
+
+                if (wallCheckCollision(game->topLeft, &bulletRect) ||
+                    wallCheckCollision(game->bottomLeft, &bulletRect) ||
+                    wallCheckCollision(game->topRight, &bulletRect) ||
+                    wallCheckCollision(game->bottomRight, &bulletRect)) {
+
+                    // Invertera riktning
+                    if (wallHitsVertical(game->topLeft, game->topRight, game->bottomLeft, game->bottomRight, &bulletRect)) {
+                        game->bullets[i].velocityX *= -1;
+                    }
+                    if (wallHitsHorizontal(game->topLeft, game->topRight, game->bottomLeft, game->bottomRight, &bulletRect)) {
+                        game->bullets[i].velocityY *= -1;
+                    }
+                }
+            }
+
+            SDL_Rect tankRect = getTankRect(game->tank);
+            SDL_FRect bulletRect = game->bullets[i].rect;
+
+            if (game->bullets[i].active &&
+                game->bullets[i].ownerId != 0 &&
+                checkCollision(&tankRect, &bulletRect)) {
+                game->bullets[i].active = false;
+            }
+            renderBullet(game->pRenderer, &game->bullets[i]);
+        }
+
+        SDL_RenderPresent(game->pRenderer);
+        SDL_Delay(1000 / 60);
+    }
+}
+
+
 void run(Game *game){
     Uint32 start = SDL_GetTicks();
     while (!game->tank && SDL_GetTicks() - start < 3000) {
@@ -337,7 +488,6 @@ void run(Game *game){
 
     bool closeWindow = false;
     bool up = false, down = false;
-    //bool left = false, right = false;
 
     int thickness = 20;
     int length = 80;
@@ -385,7 +535,6 @@ void run(Game *game){
             sendClientUpdate(game);
         }
 
-        // RENDERING 
         SDL_RenderClear(game->pRenderer);
         SDL_RenderCopy(game->pRenderer, game->pBackground, NULL, NULL);
         renderWall(game->pRenderer, game->topLeft);
@@ -394,7 +543,6 @@ void run(Game *game){
         renderWall(game->pRenderer, game->bottomRight);
 
 
-        // Rita andra spelares tanks
         for (int i = 0; i < game->numOtherTanks; i++) {
             TankState *tank = &game->otherTanks[i];
             SDL_Rect rect = { tank->x, tank->y, 64, 64 };
@@ -408,7 +556,6 @@ void run(Game *game){
             );
         }
 
-        // Rita din egen tank
         if (game->tank) {
             SDL_Rect rect = getTankRect(game->tank);
             SDL_RenderCopyEx(
@@ -685,9 +832,9 @@ void receiveGameState(Game* game) {
                     if (!game->tank) {
                         game->tank = createTank();
                         if (game->tank) {
-                            SDL_Log("713INFO: Klientens tank skapad (playerNumber=%d)", game->playerNumber);
+                            SDL_Log("INFO: Clients tank created, player number = %d", game->playerNumber);
                         } else {
-                            SDL_Log("715ERROR: createTank() returnerade NULL!");
+                            SDL_Log("ERROR: createTank() returned NULL!");
                         }
                     }
                     setTankPosition(game->tank, serverData.tanks[i].x, serverData.tanks[i].y);
@@ -698,7 +845,7 @@ void receiveGameState(Game* game) {
                 }
             }
         } else {
-            SDL_Log("WARN: Mottog ogiltigt eller okänt kommando (command=%d, len=%d)", command, game->pPacket->len);
+            SDL_Log("WARN: Unknown command (command=%d, len=%d)", command, game->pPacket->len);
         }
     }
 }
@@ -720,13 +867,11 @@ void sendClientUpdate(Game* game) {
 
     const Uint8* keys = SDL_GetKeyboardState(NULL);
 
-    // Rörelse
     if (keys[SDL_SCANCODE_W] || keys[SDL_SCANCODE_UP]) data.up = true;
     if (keys[SDL_SCANCODE_S] || keys[SDL_SCANCODE_DOWN]) data.down = true;
     if (keys[SDL_SCANCODE_A] || keys[SDL_SCANCODE_LEFT]) data.left = true;
     if (keys[SDL_SCANCODE_D] || keys[SDL_SCANCODE_RIGHT]) data.right = true;
 
-    // Räkna ut vinkel baserat på input
     float angle = getTankAngle(game->tank);
     if (data.left && !data.right) {
         angle -= 5.0f;
@@ -735,7 +880,6 @@ void sendClientUpdate(Game* game) {
     }
     data.angle = angle;
 
-    // Spara vinkeln i spelets lokala tank (för rendering)
     setTankAngle(game->tank, angle);
 
     memcpy(game->pPacket->data, &data, sizeof(ClientData));
@@ -744,7 +888,6 @@ void sendClientUpdate(Game* game) {
 
     SDLNet_UDP_Send(game->pSocket, -1, game->pPacket);
 }
-
 
 
 void closeGame(Game *game)
