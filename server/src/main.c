@@ -90,6 +90,7 @@ bool initServer() {
     topRightWall = createWall(WINDOW_WIDTH - 100 - length, 100, thickness, length, WALL_TOP_RIGHT);
     bottomLeftWall = createWall(100, WINDOW_HEIGHT - 100 - length, thickness, length, WALL_BOTTOM_LEFT);
     bottomRightWall = createWall(WINDOW_WIDTH - 100 - length, WINDOW_HEIGHT - 100 - length, thickness, length, WALL_BOTTOM_RIGHT);
+    SDL_Log("Server started");
 
     return true;
 }
@@ -150,38 +151,36 @@ void handleClientConnections(float dt) {
                 continue;
             }
             int margin = 10;
-            int tankW = 64, tankH = 64; // eller hämta från getTankRect()
+            int tankW = 64, tankH = 64; 
             int length = 80;
 
             int x = 0, y = 0;
 
             switch (index) {
-                case 0: // top left
+                case 0:
                     x = 100 + length + margin;
                     y = 100 + length + margin;
                     break;
-                case 1: // top right
+                case 1: 
                     x = WINDOW_WIDTH - 100 - length - tankW - margin;
                     y = 100 + length + margin;
                     break;
-                case 2: // bottom left
+                case 2: 
                     x = 100 + length + margin;
                     y = WINDOW_HEIGHT - 100 - length - tankH - margin;
                     break;
-                case 3: // bottom right
+                case 3: 
                     x = WINDOW_WIDTH - 100 - length - tankW - margin;
                     y = WINDOW_HEIGHT - 100 - length - tankH - margin;
                     break;
                 default:
-                    x = 400; y = 300; // fallback om något blir knas
+                    x = 400; y = 300; 
                     break;
             }
 
             setTankPosition(tank, x, y);
             setTankColorId(tank, request.tankColorId);
             tanks[index] = tank;
-
-            SDL_Log("127INFO: Tank %d skapad med färg %d på position (%d, %d)", index + 1, request.tankColorId, 100 + 100 * index, 100);
 
             playerStatus[index].lastHeartbeat = SDL_GetTicks();
             playerStatus[index].active = true;
@@ -232,13 +231,11 @@ void broadcastGameState() {
             gameState.tanks[activeTankCount].angle = getTankAngle(tanks[i]);
             gameState.tanks[activeTankCount].shooting = false;
             gameState.tanks[activeTankCount].tankColorId = getTankColorId(tanks[i]);
-            SDL_Log("204Tank %d: x=%d y=%d angle=%.2f", i + 1, rect.x, rect.y, getTankAngle(tanks[i]));
             activeTankCount++;
         }
     }
     gameState.numPlayers = activeTankCount;
 
-    SDL_Log("Broadcasting to %d active players", activeTankCount);
 
     for (int i = 0; i < numConnectedPlayers; i++) {
         if (!connectedPlayers[i].active) continue;

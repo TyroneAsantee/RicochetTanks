@@ -3,17 +3,35 @@ spel
 *.o
 *.out
 *.exe
+*.a
+*.so
+*.dll
+
+# OS-specifika filer
+.DS_Store
+Thumbs.db
+
+# Backup- och tillfälliga filer
+*~
+*.swp
+*.swo
+*.tmp
+
+# Editorfiler
+.vscode/
+.idea/
+*.code-workspace
+
+# macOS debug-symbolfiler (som du hade problem med)
+*.dSYM/
+*.dSYM/**
+
+# Byggresultat
 clientspel
 serverspel
+client/client
+server/server
 
-# Backupfiler och systemfiler
-*~
-.DS_Store
-
-# VSCode och andra editorfiler
-.vscode/
-*.swp
-
-# Ignorera Makefile-mellanprodukter
+# Makefile-varianter
 Makefile_mac
 Makefile

@@ -117,6 +117,10 @@ void initiate(Game *game)
    SDL_Init(SDL_INIT_VIDEO);
    IMG_Init(IMG_INIT_PNG);
    TTF_Init();
+   if (SDLNet_Init() == -1) {
+        SDL_Log("SDLNet_Init failed: %s", SDLNet_GetError());
+        game->state = STATE_EXIT;
+    }
 
    game->pWindow = SDL_CreateWindow("Ricochet Tank", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, WINDOW_WIDTH, WINDOW_HEIGHT, SDL_WINDOW_SHOWN);
    game->pRenderer = SDL_CreateRenderer(game->pWindow, -1, SDL_RENDERER_ACCELERATED);
@@ -211,9 +215,8 @@ void runMainMenu(Game* game) {
                 int y = game->event.button.y;
 
                 if (SDL_PointInRect(&(SDL_Point){x, y}, &rectHost)) {
+                    
                     SDL_Delay(200);
-
-                    // 🔁 Host ansluter till sin egen server
                     bool timedOut;
                     if (!connectToServer(game, game->ipAddress, &timedOut)) {
                         SDL_Log("Host kunde inte ansluta till sin egen server.");
@@ -233,13 +236,11 @@ void runMainMenu(Game* game) {
                             }
 
                             if (game->event.type == SDL_KEYDOWN && game->event.key.keysym.sym == SDLK_SPACE) {
-                                //if (connectedPlayers >= 2) {
                                     loadSelectedTankTexture(game);
                                     game->state = STATE_RUNNING;
                                     inMenu = false;
                                     waiting = false;
                                     break;
-                                //}
                             }
                         }
 
@@ -632,7 +633,6 @@ bool connectToServer(Game* game, const char* ip, bool *timedOut) {
     game->pPacket->len = sizeof(ClientData);
     game->pPacket->address = serverIP;
 
-    SDL_Log("Skickar ClientData med len=%d (ska vara %zu)", game->pPacket->len, sizeof(ClientData));
     SDLNet_UDP_Send(game->pSocket, -1, game->pPacket);
 
     Uint32 start = SDL_GetTicks();
@@ -741,9 +741,6 @@ void sendClientUpdate(Game* game) {
     memcpy(game->pPacket->data, &data, sizeof(ClientData));
     game->pPacket->len = sizeof(ClientData);
     game->pPacket->address = game->serverAddress;
-
-    SDL_Log("Skickar ClientData – angle: %.2f | up: %d | down: %d | left: %d | right: %d",
-            data.angle, data.up, data.down, data.left, data.right);
 
     SDLNet_UDP_Send(game->pSocket, -1, game->pPacket);
 }
