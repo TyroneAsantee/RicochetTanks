@@ -116,7 +116,6 @@ int main(int argv, char* args[]) {
    return 0;
 }
 
-
 void initiate(Game *game)
 {
    SDL_Init(SDL_INIT_VIDEO);
@@ -150,50 +149,74 @@ void initiate(Game *game)
 
 
 void enterServerIp(Game* game) {
-   SDL_StartTextInput();
-   SDL_Texture* background = IMG_LoadTexture(game->pRenderer, "../lib/resources/selTankBg.png");
-  
-   char inputBuffer[64] = "";
-   bool entering = true;
+    SDL_StartTextInput();
+    SDL_Texture* background = IMG_LoadTexture(game->pRenderer, "../lib/resources/selTankBg.png");
+    if (!background) {
+        SDL_Log("Failed to load background texture: %s", SDL_GetError());
+        SDL_StopTextInput();
+        return;
+    }
+    char inputBuffer[64] = "";
+    bool entering = true;
+    int inputRectW = 450; 
+    int inputRectH = 40;
+    int textY = 100;
+    int spacing = 50; 
+    SDL_Rect inputRect = {175, textY + spacing + 24, inputRectW, inputRectH}; // y = 174
 
-
-   while (entering) {
-       while (SDL_PollEvent(&game->event)) {
-           if (game->event.type == SDL_QUIT) {
-               game->state = STATE_EXIT;
-               entering = false;
-           } else if (game->event.type == SDL_TEXTINPUT) {
-               if (strlen(inputBuffer) + strlen(game->event.text.text) < 63) {
-                   strcat(inputBuffer, game->event.text.text);
-               }
-           } else if (game->event.type == SDL_KEYDOWN) {
-               if (game->event.key.keysym.sym == SDLK_BACKSPACE && strlen(inputBuffer) > 0) {
-                   inputBuffer[strlen(inputBuffer) - 1] = '\0';
-               } else if (game->event.key.keysym.sym == SDLK_RETURN) {
-                   strncpy(game->ipAddress, inputBuffer, sizeof(game->ipAddress));
-                   entering = false;
-               } else if (game->event.key.keysym.sym == SDLK_ESCAPE) {
-                   entering = false;
-               }
-           }
-       }
-           SDL_RenderClear(game->pRenderer); // först rensa
-           SDL_RenderCopy(game->pRenderer, background, NULL, NULL); // sen rita bilden
-
-           SDL_Color white = {255, 255, 255, 255};
-           renderText(game->pRenderer, "Type IP and press ENTER:", 175, 100, white);
-        
-            if (strlen(inputBuffer) > 0) {
-                renderText(game->pRenderer, inputBuffer, 175, 150, white);
+    TTF_Font* font = TTF_OpenFont("../lib/resources/Orbitron-Bold.ttf", 24);
+    if (!font) {
+        SDL_Log("Failed to load font: %s", TTF_GetError());
+        SDL_StopTextInput();
+        SDL_DestroyTexture(background);
+        return;
+    }
+    while (entering) {
+        while (SDL_PollEvent(&game->event)) {
+            if (game->event.type == SDL_QUIT) {
+                game->state = STATE_EXIT;
+                entering = false;
+            } else if (game->event.type == SDL_TEXTINPUT) {
+                if (strlen(inputBuffer) + strlen(game->event.text.text) < 63) {
+                    strcat(inputBuffer, game->event.text.text);
+                }
+            } else if (game->event.type == SDL_KEYDOWN) {
+                if (game->event.key.keysym.sym == SDLK_BACKSPACE && strlen(inputBuffer) > 0) {
+                    inputBuffer[strlen(inputBuffer) - 1] = '\0';
+                } else if (game->event.key.keysym.sym == SDLK_RETURN) {
+                    strncpy(game->ipAddress, inputBuffer, sizeof(game->ipAddress));
+                    entering = false;
+                } else if (game->event.key.keysym.sym == SDLK_ESCAPE) {
+                    entering = false;
+                }
             }
+        }
+        SDL_RenderClear(game->pRenderer); 
+        SDL_RenderCopy(game->pRenderer, background, NULL, NULL); 
+        SDL_SetRenderDrawColor(game->pRenderer, 255, 255, 255, 255); 
+        SDL_RenderDrawRect(game->pRenderer, &inputRect); 
 
-           SDL_RenderPresent(game->pRenderer);
-           SDL_Delay(16);
-   }
-   SDL_StopTextInput();
-   SDL_DestroyTexture(background);
+        SDL_Color white = {255, 255, 255, 255};
+        renderText(game->pRenderer, "Type IP And Press ENTER:", 175, 100, white);
+        
+        if (strlen(inputBuffer) > 0) {
+            int textWidth, textHeight;
+            if (TTF_SizeText(font, inputBuffer, &textWidth, &textHeight) == 0) {
+                int textX = inputRect.x + 10;  
+                int textYCentered = inputRect.y + (inputRectH - textHeight) / 2; 
+                renderText(game->pRenderer, inputBuffer, textX, textYCentered, white);
+            } else {
+                SDL_Log("Failed to calculate text size: %s", TTF_GetError());
+                renderText(game->pRenderer, inputBuffer, inputRect.x + 5, inputRect.y + (inputRectH - 24) / 2, white); // Fallback to left-align with centered y
+            }
+        }
+        SDL_RenderPresent(game->pRenderer);
+        SDL_Delay(16);
+    }
+    TTF_CloseFont(font);
+    SDL_StopTextInput();
+    SDL_DestroyTexture(background);
 }
-
 
 
 void runMainMenu(Game* game) {
@@ -488,7 +511,6 @@ void run(Game *game){
 
     bool closeWindow = false;
     bool up = false, down = false;
-
     int thickness = 20;
     int length = 80;
     game->topLeft = createWall(100, 100, thickness, length, WALL_TOP_LEFT);
@@ -534,7 +556,6 @@ void run(Game *game){
 
             sendClientUpdate(game);
         }
-
         SDL_RenderClear(game->pRenderer);
         SDL_RenderCopy(game->pRenderer, game->pBackground, NULL, NULL);
         renderWall(game->pRenderer, game->topLeft);
@@ -555,7 +576,6 @@ void run(Game *game){
                 SDL_FLIP_NONE
             );
         }
-
         if (game->tank) {
             SDL_Rect rect = getTankRect(game->tank);
             SDL_RenderCopyEx(
@@ -573,27 +593,17 @@ void run(Game *game){
     }
 }
 
-
-
 void selectTank(Game* game) {
    bool selecting = true;
    int currentSelection = 0;
-
-
    SDL_Texture* background = IMG_LoadTexture(game->pRenderer, "../lib/resources/selTankBg.png");
-
-
    SDL_Texture* tanks[MAXTANKS];
    const char* tankNames[MAXTANKS] = {"Ironclad", "Blockbuster", "Ghost Walker", "Shadow Reaper"};
    tanks[0] = IMG_LoadTexture(game->pRenderer, "../lib/resources/tank.png");
    tanks[1] = IMG_LoadTexture(game->pRenderer, "../lib/resources/tank_lego.png");
    tanks[2] = IMG_LoadTexture(game->pRenderer, "../lib/resources/tank_light.png");
    tanks[3] = IMG_LoadTexture(game->pRenderer, "../lib/resources/tank_dark.png");
-
-
    SDL_Rect tankRect = {250, 150, 300, 400};
-
-
    float angle = 0.0f;
    bool swingRight = true;
    float swingSpeed = 30.0f;
@@ -666,7 +676,6 @@ void selectTank(Game* game) {
    SDL_DestroyTexture(background);
 }
 
-
 void loadSelectedTankTexture(Game* game) {
     game->tankTextures[0] = IMG_LoadTexture(game->pRenderer, "../lib/resources/tank.png");
     game->tankTextures[1] = IMG_LoadTexture(game->pRenderer, "../lib/resources/tank_lego.png");
@@ -699,7 +708,7 @@ DialogResult showErrorDialog(Game* game, const char* title, const char* message)
         TTF_CloseFont(font);
         return DIALOG_RESULT_CANCEL;
     }
-
+    // Render message
     SDL_Surface* messageSurface = TTF_RenderText_Solid(font, message, textColor);
     if (!messageSurface) {
         SDL_Log("Failed to render message text: %s", TTF_GetError());
@@ -707,22 +716,64 @@ DialogResult showErrorDialog(Game* game, const char* title, const char* message)
         TTF_CloseFont(font);
         return DIALOG_RESULT_CANCEL;
     }
-
-    SDL_Texture* titleTexture = SDL_CreateTextureFromSurface(game->pRenderer, titleSurface);
-    SDL_Texture* messageTexture = SDL_CreateTextureFromSurface(game->pRenderer, messageSurface);
-    SDL_FreeSurface(titleSurface);
-    SDL_FreeSurface(messageSurface);
-
-    if (!titleTexture || !messageTexture) {
-        SDL_Log("Failed to create textures from surfaces: %s", SDL_GetError());
-        if (titleTexture) SDL_DestroyTexture(titleTexture);
-        if (messageTexture) SDL_DestroyTexture(messageTexture);
+    // Render "Try Again" button text
+    SDL_Surface* tryAgainSurface = TTF_RenderText_Solid(font, "Try Again", textColor);
+    if (!tryAgainSurface) {
+        SDL_Log("Failed to render try again text: %s", TTF_GetError());
+        SDL_FreeSurface(titleSurface);
+        SDL_FreeSurface(messageSurface);
         TTF_CloseFont(font);
         return DIALOG_RESULT_CANCEL;
     }
 
+    // Render "Cancel" button text
+    SDL_Surface* cancelSurface = TTF_RenderText_Solid(font, "Cancel", textColor);
+    if (!cancelSurface) {
+        SDL_Log("Failed to render cancel text: %s", TTF_GetError());
+        SDL_FreeSurface(titleSurface);
+        SDL_FreeSurface(messageSurface);
+        SDL_FreeSurface(tryAgainSurface);
+        TTF_CloseFont(font);
+        return DIALOG_RESULT_CANCEL;
+    }
+
+    SDL_Texture* titleTexture = SDL_CreateTextureFromSurface(game->pRenderer, titleSurface);
+    SDL_Texture* messageTexture = SDL_CreateTextureFromSurface(game->pRenderer, messageSurface);
+    SDL_Texture* tryAgainTexture = SDL_CreateTextureFromSurface(game->pRenderer, tryAgainSurface);
+    SDL_Texture* cancelTexture = SDL_CreateTextureFromSurface(game->pRenderer, cancelSurface);
+    SDL_FreeSurface(titleSurface);
+    SDL_FreeSurface(messageSurface);
+    SDL_FreeSurface(tryAgainSurface);
+    SDL_FreeSurface(cancelSurface);
+
+    if (!titleTexture || !messageTexture || !tryAgainTexture || !cancelTexture) {
+        SDL_Log("Failed to create textures from surfaces: %s", SDL_GetError());
+        if (titleTexture) SDL_DestroyTexture(titleTexture);
+        if (messageTexture) SDL_DestroyTexture(messageTexture);
+        if (tryAgainTexture) SDL_DestroyTexture(tryAgainTexture);
+        if (cancelTexture) SDL_DestroyTexture(cancelTexture);
+        TTF_CloseFont(font);
+        return DIALOG_RESULT_CANCEL;
+    }
+    // Define dialog dimensions and positions
     int dialogW = 400, dialogH = 200;
-    SDL_Rect dialogRect = {(800 - dialogW) / 2, (600 - dialogH) / 2, dialogW, dialogH};
+    SDL_Rect dialogRect = {(WINDOW_WIDTH - dialogW) / 2, (WINDOW_HEIGHT - dialogH) / 2, dialogW, dialogH};
+
+    // Define positions for title and message
+    int titleW, titleH, messageW, messageH;
+    SDL_QueryTexture(titleTexture, NULL, NULL, &titleW, &titleH);
+    SDL_QueryTexture(messageTexture, NULL, NULL, &messageW, &messageH);
+    SDL_Rect titleRect = {dialogRect.x + (dialogW - titleW) / 2, dialogRect.y + 20, titleW, titleH};
+    SDL_Rect messageRect = {dialogRect.x + (dialogW - messageW) / 2, dialogRect.y + 60, messageW, messageH};
+    int buttonW = 150, buttonH = 40;
+    SDL_Rect tryAgainRect = {dialogRect.x + 40, dialogRect.y + 120, buttonW, buttonH};
+    SDL_Rect cancelRect = {dialogRect.x + 220, dialogRect.y + 120, buttonW, buttonH}; // Increased x by 100
+
+    int tryAgainW, tryAgainH, cancelW, cancelH;
+    SDL_QueryTexture(tryAgainTexture, NULL, NULL, &tryAgainW, &tryAgainH);
+    SDL_QueryTexture(cancelTexture, NULL, NULL, &cancelW, &cancelH);
+    SDL_Rect tryAgainTextRect = {tryAgainRect.x + (buttonW - tryAgainW) / 2, tryAgainRect.y + (buttonH - tryAgainH) / 2, tryAgainW, tryAgainH};
+    SDL_Rect cancelTextRect = {cancelRect.x + (buttonW - cancelW) / 2, cancelRect.y + (buttonH - cancelH) / 2, cancelW, cancelH};
 
     bool inDialog = true;
     DialogResult result = DIALOG_RESULT_NONE;
@@ -734,21 +785,44 @@ DialogResult showErrorDialog(Game* game, const char* title, const char* message)
                 inDialog = false;
                 result = DIALOG_RESULT_CANCEL;
             } else if (game->event.type == SDL_MOUSEBUTTONDOWN) {
-                inDialog = false;
-                result = DIALOG_RESULT_CANCEL;
+                int x = game->event.button.x;
+                int y = game->event.button.y;
+                if (SDL_PointInRect(&(SDL_Point){x, y}, &tryAgainRect)) {
+                    result = DIALOG_RESULT_TRY_AGAIN;
+                    inDialog = false;
+                } else if (SDL_PointInRect(&(SDL_Point){x, y}, &cancelRect)) {
+                    result = DIALOG_RESULT_CANCEL;
+                    inDialog = false;
+                }
             }
         }
-
+        // Draw dialog background
         SDL_SetRenderDrawColor(game->pRenderer, 50, 50, 50, 255);
         SDL_RenderFillRect(game->pRenderer, &dialogRect);
-        SDL_RenderCopy(game->pRenderer, titleTexture, NULL, NULL);
-        SDL_RenderCopy(game->pRenderer, messageTexture, NULL, NULL);
+
+        // Draw buttons
+        SDL_SetRenderDrawColor(game->pRenderer, 100, 100, 100, 255);
+        SDL_RenderFillRect(game->pRenderer, &tryAgainRect);
+        SDL_RenderFillRect(game->pRenderer, &cancelRect);
+
+        // Draw button borders
+        SDL_SetRenderDrawColor(game->pRenderer, 255, 255, 255, 255);
+        SDL_RenderDrawRect(game->pRenderer, &tryAgainRect);
+        SDL_RenderDrawRect(game->pRenderer, &cancelRect);
+
+        // Render title, message, and button texts
+        SDL_RenderCopy(game->pRenderer, titleTexture, NULL, &titleRect);
+        SDL_RenderCopy(game->pRenderer, messageTexture, NULL, &messageRect);
+        SDL_RenderCopy(game->pRenderer, tryAgainTexture, NULL, &tryAgainTextRect);
+        SDL_RenderCopy(game->pRenderer, cancelTexture, NULL, &cancelTextRect);
+
         SDL_RenderPresent(game->pRenderer);
         SDL_Delay(16);
     }
-
     SDL_DestroyTexture(titleTexture);
     SDL_DestroyTexture(messageTexture);
+    SDL_DestroyTexture(tryAgainTexture);
+    SDL_DestroyTexture(cancelTexture);
     TTF_CloseFont(font);
     return result;
 }
