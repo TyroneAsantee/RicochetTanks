@@ -200,12 +200,12 @@ void runMainMenu(Game* game) {
     bool inMenu = true;
 
     SDL_Texture* bg = IMG_LoadTexture(game->pRenderer, "../lib/resources/menu_bg.png");
-    SDL_Texture* btnHost = IMG_LoadTexture(game->pRenderer, "../lib/resources/Please3.png");
+    SDL_Texture* btnSingle = IMG_LoadTexture(game->pRenderer, "../lib/resources/Please3.png");
     SDL_Texture* btnConnect = IMG_LoadTexture(game->pRenderer, "../lib/resources/btn_connect.png");
     SDL_Texture* btnSelectTank = IMG_LoadTexture(game->pRenderer, "../lib/resources/btn_select_tank.png");
     SDL_Texture* btnExit = IMG_LoadTexture(game->pRenderer, "../lib/resources/btn_exit.png");
 
-    SDL_Rect rectHost = {250, 290, 300, 60};
+    SDL_Rect rectSingle = {250, 290, 300, 60};
     SDL_Rect rectConnect = {250, 370, 300, 60};
     SDL_Rect rectSelectTank = {250, 450, 300, 60};
     SDL_Rect rectExit = {250, 530, 300, 60};
@@ -219,7 +219,7 @@ void runMainMenu(Game* game) {
                 int x = game->event.button.x;
                 int y = game->event.button.y;
 
-                if (SDL_PointInRect(&(SDL_Point){x, y}, &rectHost)) {
+                if (SDL_PointInRect(&(SDL_Point){x, y}, &rectSingle)) {
                     
                     SDL_Delay(200);
                     
@@ -268,7 +268,7 @@ void runMainMenu(Game* game) {
         SDL_SetRenderDrawColor(game->pRenderer, 0, 0, 0, 255);
         SDL_RenderClear(game->pRenderer);
         SDL_RenderCopy(game->pRenderer, bg, NULL, NULL);
-        SDL_RenderCopy(game->pRenderer, btnHost, NULL, &rectHost);
+        SDL_RenderCopy(game->pRenderer, btnSingle, NULL, &rectSingle);
         SDL_RenderCopy(game->pRenderer, btnConnect, NULL, &rectConnect);
         SDL_RenderCopy(game->pRenderer, btnSelectTank, NULL, &rectSelectTank);
         SDL_RenderCopy(game->pRenderer, btnExit, NULL, &rectExit);
@@ -277,7 +277,7 @@ void runMainMenu(Game* game) {
     }
 
     SDL_DestroyTexture(bg);
-    SDL_DestroyTexture(btnHost);
+    SDL_DestroyTexture(btnSingle);
     SDL_DestroyTexture(btnConnect);
     SDL_DestroyTexture(btnSelectTank);
     SDL_DestroyTexture(btnExit);
