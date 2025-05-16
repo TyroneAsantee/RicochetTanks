@@ -265,7 +265,6 @@ void updateTanks(float dt) {
 
         float angle = playerStatus[i].angle;
 
-        // Rotation
         if (playerStatus[i].left && !playerStatus[i].right) {
             angle -= 10.0f;
         } else if (playerStatus[i].right && !playerStatus[i].left) {
@@ -274,7 +273,6 @@ void updateTanks(float dt) {
 
         setTankAngle(tanks[i], angle);
 
-        // Rörelse
         float speed = 800.0f;
         float radians = (angle - 90.0f) * M_PI / 180.0f;
         float dx = 0, dy = 0;
@@ -291,7 +289,6 @@ void updateTanks(float dt) {
         rect.x += dx;
         rect.y += dy;
 
-        // Begränsningar
         if (rect.x < 0) rect.x = 0;
         if (rect.y < 0) rect.y = 0;
         if (rect.x > WINDOW_WIDTH - rect.w) rect.x = WINDOW_WIDTH - rect.w;
@@ -302,11 +299,7 @@ void updateTanks(float dt) {
             !wallCheckCollision(bottomLeftWall, &rect) &&
             !wallCheckCollision(bottomRightWall, &rect)) {
             setTankPosition(tanks[i], rect.x, rect.y);
-        } else {
-            // Eventuellt logga kollision
-            SDL_Log("Tank %d krockade med vägg.", i + 1);
         }
     }
 }
-
 
