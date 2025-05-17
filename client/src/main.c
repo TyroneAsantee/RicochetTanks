@@ -118,6 +118,7 @@ int main(int argv, char* args[]) {
 
 void initiate(Game *game){
 
+    memset(game, 0, sizeof(Game));
     SDL_Init(SDL_INIT_VIDEO);
     IMG_Init(IMG_INIT_PNG);
     TTF_Init();
@@ -227,7 +228,7 @@ void runMainMenu(Game* game) {
     bool inMenu = true;
 
     SDL_Texture* bg = IMG_LoadTexture(game->pRenderer, "../lib/resources/menu_bg.png");
-    SDL_Texture* btnSingle = IMG_LoadTexture(game->pRenderer, "../lib/resources/Please3.png");
+    SDL_Texture* btnSingle = IMG_LoadTexture(game->pRenderer, "../lib/resources/btn_practice.png");
     SDL_Texture* btnConnect = IMG_LoadTexture(game->pRenderer, "../lib/resources/btn_connect.png");
     SDL_Texture* btnSelectTank = IMG_LoadTexture(game->pRenderer, "../lib/resources/btn_select_tank.png");
     SDL_Texture* btnExit = IMG_LoadTexture(game->pRenderer, "../lib/resources/btn_exit.png");
@@ -965,6 +966,7 @@ void closeGame(Game *game)
 {
     if (game->tank) {
         destroyTankInstance(game->tank);
+        game->tank = NULL;
     }
 
     destroyTank();
