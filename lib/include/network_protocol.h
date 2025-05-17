@@ -35,6 +35,7 @@ typedef struct {
     float y;
     float angle;
     bool shooting;
+    int health; 
     int tankColorId;
 } TankState;
 

@@ -5,7 +5,6 @@ spel
 *.exe
 *.a
 *.so
-*.dll
 
 # OS-specifika filer
 .DS_Store

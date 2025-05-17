@@ -589,6 +589,7 @@ void run(Game *game){
                 NULL,
                 SDL_FLIP_NONE
             );
+            renderTankHealth(game->pRenderer, getTankHealth(game->tank));
         }
 
         SDL_RenderPresent(game->pRenderer);
@@ -909,6 +910,7 @@ void receiveGameState(Game* game) {
                     setTankPosition(game->tank, serverData.tanks[i].x, serverData.tanks[i].y);
                     setTankAngle(game->tank, serverData.tanks[i].angle);
                     setTankColorId(game->tank, serverData.tanks[i].tankColorId);
+                    setTankHealth(game->tank, serverData.tanks[i].health);
                 } else {
                     game->otherTanks[game->numOtherTanks++] = serverData.tanks[i];
                 }

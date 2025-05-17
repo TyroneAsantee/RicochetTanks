@@ -231,6 +231,7 @@ void broadcastGameState() {
             gameState.tanks[activeTankCount].angle = getTankAngle(tanks[i]);
             gameState.tanks[activeTankCount].shooting = false;
             gameState.tanks[activeTankCount].tankColorId = getTankColorId(tanks[i]);
+            gameState.tanks[activeTankCount].health = getTankHealth(tanks[i]);
             activeTankCount++;
         }
     }
