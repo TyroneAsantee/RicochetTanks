@@ -1,8 +1,8 @@
 #ifndef TANK_SERVER_H
 #define TANK_SERVER_H
 
-#include <SDL2/SDL.h>
-#include <SDL2/SDL_net.h>
+#include <SDL.h>
+#include <SDL_net.h>
 #include <stdbool.h>
 
 typedef struct {

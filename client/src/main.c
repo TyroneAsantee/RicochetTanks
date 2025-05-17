@@ -1,7 +1,7 @@
-#include <SDL2/SDL.h>
-#include <SDL2/SDL_image.h>
-#include <SDL2/SDL_ttf.h>
-#include <SDL2/SDL_net.h>
+#include <SDL.h>
+#include <SDL_image.h>
+#include <SDL_ttf.h>
+#include <SDL_net.h>
 #include <stdbool.h>
 #include <math.h>
 #include "tank.h"
@@ -12,6 +12,7 @@
 #include "wall.h"
 #include "network_protocol.h"
 #include "tank_server.h"
+#include "bullet_server.h"
 
 #ifdef _WIN32
 #include <SDL2/SDL_main.h>
@@ -28,6 +29,7 @@
 #define SPEED 100
 #define SERVER_PORT 12345
 #define MAX_PLAYERS 4
+#define MAX_BULLETS_PER_PLAYER 5
 volatile int connectedPlayers = 1;
 
 typedef enum {
@@ -556,16 +558,15 @@ void run(Game *game){
         }
 
         if (game->tank) {
-
             sendClientUpdate(game);
         }
+
         SDL_RenderClear(game->pRenderer);
         SDL_RenderCopy(game->pRenderer, game->pBackground, NULL, NULL);
         renderWall(game->pRenderer, game->topLeft);
         renderWall(game->pRenderer, game->topRight);
         renderWall(game->pRenderer, game->bottomLeft);
         renderWall(game->pRenderer, game->bottomRight);
-
 
         for (int i = 0; i < game->numOtherTanks; i++) {
             TankState *tank = &game->otherTanks[i];
@@ -579,6 +580,7 @@ void run(Game *game){
                 SDL_FLIP_NONE
             );
         }
+
         if (game->tank) {
             SDL_Rect rect = getTankRect(game->tank);
             SDL_RenderCopyEx(
@@ -592,10 +594,48 @@ void run(Game *game){
             renderTankHealth(game->pRenderer, getTankHealth(game->tank));
         }
 
+        // === BULLET HANDLING ===
+        for (int i = 0; i < MAX_PLAYERS * MAX_BULLETS_PER_PLAYER; i++) {
+            if (!game->bullets[i].active)
+                continue;
+
+            SDL_Rect tankRect = getTankRect(game->tank);
+            SDL_FRect bulletRect = game->bullets[i].rect;
+
+            SDL_Rect wallRect = {
+                (int)bulletRect.x,
+                (int)bulletRect.y,
+                (int)bulletRect.w,
+                (int)bulletRect.h
+            };
+
+            if (wallCheckCollision(game->topLeft, &wallRect) ||
+                wallCheckCollision(game->topRight, &wallRect) ||
+                wallCheckCollision(game->bottomLeft, &wallRect) ||
+                wallCheckCollision(game->bottomRight, &wallRect)) {
+
+                if (wallHitsVertical(game->topLeft, game->topRight, game->bottomLeft, game->bottomRight, &wallRect)) {
+                    game->bullets[i].velocityX *= -1;
+                }
+                if (wallHitsHorizontal(game->topLeft, game->topRight, game->bottomLeft, game->bottomRight, &wallRect)) {
+                    game->bullets[i].velocityY *= -1;
+                }
+            }
+
+            if (game->bullets[i].ownerId != game->playerNumber && checkCollision(&tankRect, &bulletRect)) {
+                game->bullets[i].active = false;
+                // Låt endast servern hantera HP
+            }
+
+
+            renderBullet(game->pRenderer, &game->bullets[i]);
+        }
+
         SDL_RenderPresent(game->pRenderer);
         SDL_Delay(16);
     }
 }
+
 
 void selectTank(Game* game) {
    bool selecting = true;
@@ -915,50 +955,63 @@ void receiveGameState(Game* game) {
                     game->otherTanks[game->numOtherTanks++] = serverData.tanks[i];
                 }
             }
+
+            // 🔫 Hantera projektiler
+            for (int i = 0; i < serverData.numBullets && i < MAX_PLAYERS * MAX_BULLETS_PER_PLAYER; i++) {
+                Bullet* b = &game->bullets[i];
+                b->rect.x = serverData.bullets[i].x;
+                b->rect.y = serverData.bullets[i].y;
+                b->rect.w = 8;
+                b->rect.h = 8;
+                b->velocityX = serverData.bullets[i].vx;
+                b->velocityY = serverData.bullets[i].vy;
+                b->active = serverData.bullets[i].active;
+                b->ownerId = serverData.bullets[i].ownerId;
+            }
+
+            // 🔕 Inaktivera övriga bullets
+            for (int i = serverData.numBullets; i < MAX_PLAYERS * MAX_BULLETS_PER_PLAYER; i++) {
+                game->bullets[i].active = false;
+            }
+
         } else {
             SDL_Log("WARN: Unknown command (command=%d, len=%d)", command, game->pPacket->len);
         }
     }
 }
 
+
 void sendClientUpdate(Game* game) {
-    if (!game || !game->pSocket || !game->pPacket || !game->tank) return;
+    if (!game || !game->tank || !game->pSocket || !game->pPacket) return;
 
     ClientData data;
     memset(&data, 0, sizeof(ClientData));
 
     data.command = UPDATE;
     data.playerNumber = game->playerNumber;
-    data.tankColorId = game->tankColorId;
-    data.up = false;
-    data.down = false;
-    data.left = false;
-    data.right = false;
-    data.shooting = false;
+    data.tankColorId = getTankColorId(game->tank);
+    data.angle = getTankAngle(game->tank);
 
     const Uint8* keys = SDL_GetKeyboardState(NULL);
 
-    if (keys[SDL_SCANCODE_W] || keys[SDL_SCANCODE_UP]) data.up = true;
-    if (keys[SDL_SCANCODE_S] || keys[SDL_SCANCODE_DOWN]) data.down = true;
-    if (keys[SDL_SCANCODE_A] || keys[SDL_SCANCODE_LEFT]) data.left = true;
-    if (keys[SDL_SCANCODE_D] || keys[SDL_SCANCODE_RIGHT]) data.right = true;
+    data.up    = keys[SDL_SCANCODE_W] || keys[SDL_SCANCODE_UP];
+    data.down  = keys[SDL_SCANCODE_S] || keys[SDL_SCANCODE_DOWN];
+    data.left  = keys[SDL_SCANCODE_A] || keys[SDL_SCANCODE_LEFT];
+    data.right = keys[SDL_SCANCODE_D] || keys[SDL_SCANCODE_RIGHT];
 
-    float angle = getTankAngle(game->tank);
-    if (data.left && !data.right) {
-        angle -= 5.0f;
-    } else if (data.right && !data.left) {
-        angle += 5.0f;
+    Uint32 now = SDL_GetTicks();
+    if (keys[SDL_SCANCODE_SPACE] && (now - game->lastshottime > 700)) {
+        data.shooting = true;
+        game->lastshottime = now;
+    } else {
+        data.shooting = false;
     }
-    data.angle = angle;
-
-    setTankAngle(game->tank, angle);
 
     memcpy(game->pPacket->data, &data, sizeof(ClientData));
     game->pPacket->len = sizeof(ClientData);
-    game->pPacket->address = game->serverAddress;
-
     SDLNet_UDP_Send(game->pSocket, -1, game->pPacket);
 }
+
 
 
 void closeGame(Game *game)
