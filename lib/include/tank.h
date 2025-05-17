@@ -1,9 +1,9 @@
 #ifndef TANK_H
 #define TANK_H
 
-#include <SDL2/SDL.h>
+#include <SDL.h>
 #include <stdbool.h>
-#include <SDL2/SDL_image.h>
+#include <SDL_image.h>
 #include <math.h>
 #include <stdlib.h>
 

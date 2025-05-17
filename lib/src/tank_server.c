@@ -1,6 +1,6 @@
 #include "tank_server.h"
 #include <stdlib.h>
-#include <SDL2/SDL.h>
+#include <SDL.h>
 
 struct Tank {
     int x, y;

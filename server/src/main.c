@@ -1,17 +1,21 @@
-#include <SDL2/SDL.h>
-#include <SDL2/SDL_net.h>
+#include <SDL.h>
+#include <SDL_net.h>
 #include <string.h>
 #include "tank_server.h"
 #include "network_protocol.h"
 #include "wall.h"
+#include "collision.h"
+#include "bullet_server.h"
 
 #define SERVER_PORT 12345
 #define MAX_PLAYERS 4
 #define WINDOW_WIDTH 800
 #define WINDOW_HEIGHT 600
+#define MAX_BULLETS_PER_PLAYER 5
 
 static Player connectedPlayers[MAX_PLAYERS];
 static PlayerStatus playerStatus[MAX_PLAYERS];
+static ServerBullet bullets[MAX_PLAYERS * MAX_BULLETS_PER_PLAYER];
 int numConnectedPlayers = 0;
 static Tank* tanks[MAX_PLAYERS];
 static UDPsocket serverSocket;
@@ -21,12 +25,15 @@ Wall* topRightWall;
 Wall* bottomLeftWall;
 Wall* bottomRightWall;
 
+
 bool initServer();
+bool matchStarted = false;
 void sendInitialGameData(Player *player);
 void handleClientConnections(float dt);
 void broadcastGameState();
 void checkPlayerHeartbeats();
 void updateTanks(float dt);
+void updateServerBullets(float dt);
 int serverThread(void* data);
 
 int main(int argc, char* argv[]) {
@@ -40,14 +47,15 @@ int main(int argc, char* argv[]) {
 
     while (true) {
         Uint32 now = SDL_GetTicks();
-        float dt = (now - lastUpdate) / 1000.0f; 
+        float dt = (now - lastUpdate) / 1000.0f;
         if (dt > 0.05f) dt = 0.05f;
 
-        handleClientConnections(dt);  
+        handleClientConnections(dt);
         checkPlayerHeartbeats();
 
         if (now - lastBroadcast > 100) {
             updateTanks(dt);
+            updateServerBullets(dt);  
             broadcastGameState();
             lastBroadcast = now;
         }
@@ -55,7 +63,7 @@ int main(int argc, char* argv[]) {
         lastUpdate = now;
         SDL_Delay(10);
     }
-    
+
     destroyWall(topLeftWall);
     destroyWall(topRightWall);
     destroyWall(bottomLeftWall);
@@ -63,6 +71,7 @@ int main(int argc, char* argv[]) {
 
     return 0;
 }
+
 
 
 bool initServer() {
@@ -138,11 +147,10 @@ void handleClientConnections(float dt) {
             }
 
             Player newPlayer = {
-                packet->address,
-                index + 1,
-                true
+                .address = packet->address,
+                .playerID = index + 1,
+                .active = true
             };
-
             connectedPlayers[index] = newPlayer;
 
             Tank* tank = createTank();
@@ -150,32 +158,18 @@ void handleClientConnections(float dt) {
                 SDL_Log("ERROR: Kunde inte skapa tank för spelare %d", index + 1);
                 continue;
             }
+
             int margin = 10;
-            int tankW = 64, tankH = 64; 
+            int tankW = 64, tankH = 64;
             int length = 80;
 
             int x = 0, y = 0;
-
             switch (index) {
-                case 0:
-                    x = 100 + length + margin;
-                    y = 100 + length + margin;
-                    break;
-                case 1: 
-                    x = WINDOW_WIDTH - 100 - length - tankW - margin;
-                    y = 100 + length + margin;
-                    break;
-                case 2: 
-                    x = 100 + length + margin;
-                    y = WINDOW_HEIGHT - 100 - length - tankH - margin;
-                    break;
-                case 3: 
-                    x = WINDOW_WIDTH - 100 - length - tankW - margin;
-                    y = WINDOW_HEIGHT - 100 - length - tankH - margin;
-                    break;
-                default:
-                    x = 400; y = 300; 
-                    break;
+                case 0: x = 100 + length + margin; y = 100 + length + margin; break;
+                case 1: x = WINDOW_WIDTH - 100 - length - tankW - margin; y = 100 + length + margin; break;
+                case 2: x = 100 + length + margin; y = WINDOW_HEIGHT - 100 - length - tankH - margin; break;
+                case 3: x = WINDOW_WIDTH - 100 - length - tankW - margin; y = WINDOW_HEIGHT - 100 - length - tankH - margin; break;
+                default: x = 400; y = 300; break;
             }
 
             setTankPosition(tank, x, y);
@@ -190,32 +184,58 @@ void handleClientConnections(float dt) {
 
             ClientData response = { CONNECT };
             response.playerNumber = newPlayer.playerID;
-
             memcpy(packet->data, &response, sizeof(ClientData));
             packet->len = sizeof(ClientData);
             packet->address = newPlayer.address;
-
             SDLNet_UDP_Send(serverSocket, -1, packet);
 
-            sendInitialGameData(&newPlayer);
-            SDL_Delay(100);
-            broadcastGameState();
+            
+            if (!matchStarted && numConnectedPlayers >= 1) {
+                matchStarted = true;
+            }
 
-        } else if (request.command == UPDATE) {
+            sendInitialGameData(&connectedPlayers[index]);
+
+            broadcastGameState();
+        }
+
+        else if (request.command == UPDATE) {
             int id = request.playerNumber;
             if (id >= 1 && id <= MAX_PLAYERS) {
                 int i = id - 1;
+
                 playerStatus[i].up = request.up;
                 playerStatus[i].down = request.down;
                 playerStatus[i].left = request.left;
                 playerStatus[i].right = request.right;
                 playerStatus[i].angle = request.angle;
                 playerStatus[i].lastHeartbeat = SDL_GetTicks();
+
+                if (request.shooting && tanks[i]) {
+                    for (int j = 0; j < MAX_PLAYERS * MAX_BULLETS_PER_PLAYER; j++) {
+                        if (!bullets[j].active) {
+                            initServerBullet(&bullets[j]);
+
+                            SDL_Rect rect = getTankRect(tanks[i]);
+                            float angle = playerStatus[i].angle;
+                            float radians = (angle - 90.0f) * M_PI / 180.0f;
+
+                            float centerX = rect.x + rect.w / 2;
+                            float centerY = rect.y + rect.h / 2;
+                            float muzzleOffset = rect.h / 2 + 10;
+
+                            float startX = centerX + cosf(radians) * muzzleOffset;
+                            float startY = centerY + sinf(radians) * muzzleOffset;
+
+                            fireServerBullet(&bullets[j], startX, startY, angle, id);
+                            break;
+                        }
+                    }
+                }
             }
         }
     }
 }
-
 
 void broadcastGameState() {
     ServerData gameState;
@@ -237,6 +257,19 @@ void broadcastGameState() {
     }
     gameState.numPlayers = activeTankCount;
 
+    gameState.numBullets = 0;
+    for (int i = 0; i < MAX_PLAYERS * MAX_BULLETS_PER_PLAYER; i++) {
+        if (bullets[i].active) {
+            gameState.bullets[gameState.numBullets++] = (BulletState){
+                .x = bullets[i].x,
+                .y = bullets[i].y,
+                .vx = bullets[i].velocityX,
+                .vy = bullets[i].velocityY,
+                .active = bullets[i].active,
+                .ownerId = bullets[i].ownerId
+            };
+        }
+    }
 
     for (int i = 0; i < numConnectedPlayers; i++) {
         if (!connectedPlayers[i].active) continue;
@@ -248,6 +281,7 @@ void broadcastGameState() {
         SDLNet_UDP_Send(serverSocket, -1, packet);
     }
 }
+
 
 void checkPlayerHeartbeats() {
     Uint32 currentTime = SDL_GetTicks();
@@ -304,3 +338,57 @@ void updateTanks(float dt) {
     }
 }
 
+void updateServerBullets(float dt) {
+    for (int i = 0; i < MAX_PLAYERS * MAX_BULLETS_PER_PLAYER; i++) {
+        if (!bullets[i].active) continue;
+
+        bullets[i].x += bullets[i].velocityX * dt;
+        bullets[i].y += bullets[i].velocityY * dt;
+
+        bullets[i].rect.x = bullets[i].x;
+        bullets[i].rect.y = bullets[i].y;
+
+        SDL_Rect bulletRect = {
+            (int)bullets[i].x,
+            (int)bullets[i].y,
+            (int)bullets[i].rect.w,
+            (int)bullets[i].rect.h
+        };
+
+        if (wallCheckCollision(topLeftWall, &bulletRect) ||
+            wallCheckCollision(topRightWall, &bulletRect) ||
+            wallCheckCollision(bottomLeftWall, &bulletRect) ||
+            wallCheckCollision(bottomRightWall, &bulletRect)) {
+
+            if (wallHitsVertical(topLeftWall, topRightWall, bottomLeftWall, bottomRightWall, &bulletRect)) {
+                bullets[i].velocityX *= -1;
+            }
+            if (wallHitsHorizontal(topLeftWall, topRightWall, bottomLeftWall, bottomRightWall, &bulletRect)) {
+                bullets[i].velocityY *= -1;
+            }
+        }
+
+        for (int j = 0; j < MAX_PLAYERS; j++) {
+            if (!connectedPlayers[j].active || !tanks[j]) continue;
+
+            if (bullets[i].ownerId == connectedPlayers[j].playerID) continue;
+
+            SDL_Rect tankRect = getTankRect(tanks[j]);
+            if (checkCollision(&tankRect, &bullets[i].rect)) {
+                bullets[i].active = false;
+
+                int hp = getTankHealth(tanks[j]);
+                if (hp > 0) {
+                    setTankHealth(tanks[j], hp - 1);
+                }
+
+                break;
+            }
+        }
+
+        if (bullets[i].x < 0 || bullets[i].x > WINDOW_WIDTH ||
+            bullets[i].y < 0 || bullets[i].y > WINDOW_HEIGHT) {
+            bullets[i].active = false;
+        }
+    }
+}
