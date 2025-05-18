@@ -5,6 +5,7 @@
 
 #define MAX_PLAYERS 4
 #define MAX_BULLETS 20
+#define MATCH_OVER 3
 
 typedef enum {
     CONNECT,
@@ -70,6 +71,7 @@ typedef struct {
 
 typedef struct {
     ServerCommand command;
+    int winningPlayerID;
     int numPlayers;
     TankState tanks[MAX_PLAYERS];
     BulletState bullets[MAX_BULLETS];
