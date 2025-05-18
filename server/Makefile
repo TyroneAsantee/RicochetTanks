@@ -1,8 +1,9 @@
 CC = gcc
-CFLAGS = -Wall -g `sdl2-config --cflags` -I../lib/include
-LDFLAGS = `sdl2-config --libs` -lSDL2_net
+CFLAGS = -Wall -g -I../lib/include -IC:/msys64/mingw64/include/SDL2
+LDFLAGS = -LC:/msys64/mingw64/lib -lmingw32 -lSDL2main -lSDL2 -lSDL2_net
+
 SRC = src/main.c ../lib/src/tank_server.c ../lib/src/wall.c ../lib/src/bullet_server.c ../lib/src/collision.c
-OUT = serverspel
+OUT = serverspel.exe
 
 all: $(OUT)
 
@@ -10,5 +11,4 @@ $(OUT): $(SRC)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 clean:
-	rm -f $(OUT)
-	rm -f $(OUT) Info.plist
+	del /Q $(OUT)
