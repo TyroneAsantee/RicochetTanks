@@ -18,7 +18,6 @@
 #include <SDL2/SDL_main.h>
 #endif
 
-
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
@@ -72,6 +71,8 @@ typedef struct {
     TankState otherTanks[MAX_PLAYERS];
     SDL_Texture* tankTextures[MAXTANKS];
     int numOtherTanks;
+    bool matchOver;
+    int winningPlayerID; 
 } Game;
 
 
@@ -84,10 +85,12 @@ void selectTank(Game* game);
 void loadSelectedTankTexture(Game* game);
 void runSinglePlayer(Game *game);
 void closeGame(Game* game);
+void showYouDiedDialog(Game* game);
 bool connectToServer(Game* game, const char* ip, bool *timedOut);
 void receiveGameState(Game* game);
 void sendClientUpdate(Game* game);
 DialogResult showErrorDialog(Game* game, const char* title, const char* message);
+void showWinnerDialog(Game* game, int winnerID);
 
 
 int main(int argv, char* args[]) {
@@ -113,10 +116,10 @@ int main(int argv, char* args[]) {
                break;
        }
    }
-
    closeGame(&game);
    return 0;
 }
+
 
 void initiate(Game *game){
 
@@ -128,21 +131,16 @@ void initiate(Game *game){
             SDL_Log("SDLNet_Init failed: %s", SDLNet_GetError());
             game->state = STATE_EXIT;
         }
-
     game->pWindow = SDL_CreateWindow("Ricochet Tank", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, WINDOW_WIDTH, WINDOW_HEIGHT, SDL_WINDOW_SHOWN);
     game->pRenderer = SDL_CreateRenderer(game->pWindow, -1, SDL_RENDERER_ACCELERATED);
-
     initTank(game->pRenderer);
     loadHeartTexture(game->pRenderer);
     loadBulletTexture(game->pRenderer);
     initTextSystem("../lib/resources/Orbitron-Bold.ttf", 32);
-
     SDL_Surface *bgSurface = IMG_Load("../lib/resources/background.png");
     game->pBackground = SDL_CreateTextureFromSurface(game->pRenderer, bgSurface);
     SDL_FreeSurface(bgSurface);
-
     initiate_timer(&game->timer);
-
     game->state = STATE_MENU;
     game->pPacket = NULL;
     game->pSocket = NULL;
@@ -152,6 +150,8 @@ void initiate(Game *game){
     game->topRight = NULL;
     game->bottomLeft = NULL;
     game->bottomRight = NULL;
+    game->matchOver = false; 
+    game->winningPlayerID = -1; 
 }
 
 
@@ -170,7 +170,6 @@ void enterServerIp(Game* game) {
     int textY = 100;
     int spacing = 50; 
     SDL_Rect inputRect = {175, textY + spacing + 24, inputRectW, inputRectH}; 
-
     TTF_Font* font = TTF_OpenFont("../lib/resources/Orbitron-Bold.ttf", 24);
     if (!font) {
         SDL_Log("Failed to load font: %s", TTF_GetError());
@@ -202,10 +201,8 @@ void enterServerIp(Game* game) {
         SDL_RenderCopy(game->pRenderer, background, NULL, NULL); 
         SDL_SetRenderDrawColor(game->pRenderer, 255, 255, 255, 255); 
         SDL_RenderDrawRect(game->pRenderer, &inputRect); 
-
         SDL_Color white = {255, 255, 255, 255};
         renderText(game->pRenderer, "Type IP And Press ENTER:", 175, 100, white);
-        
         if (strlen(inputBuffer) > 0) {
             int textWidth, textHeight;
             if (TTF_SizeText(font, inputBuffer, &textWidth, &textHeight) == 0) {
@@ -234,12 +231,10 @@ void runMainMenu(Game* game) {
     SDL_Texture* btnConnect = IMG_LoadTexture(game->pRenderer, "../lib/resources/btn_connect.png");
     SDL_Texture* btnSelectTank = IMG_LoadTexture(game->pRenderer, "../lib/resources/btn_select_tank.png");
     SDL_Texture* btnExit = IMG_LoadTexture(game->pRenderer, "../lib/resources/btn_exit.png");
-
     SDL_Rect rectSingle = {250, 290, 300, 60};
     SDL_Rect rectConnect = {250, 370, 300, 60};
     SDL_Rect rectSelectTank = {250, 450, 300, 60};
     SDL_Rect rectExit = {250, 530, 300, 60};
-
     while (inMenu) {
         while (SDL_PollEvent(&game->event)) {
             if (game->event.type == SDL_QUIT) {
@@ -248,19 +243,14 @@ void runMainMenu(Game* game) {
             } else if (game->event.type == SDL_MOUSEBUTTONDOWN) {
                 int x = game->event.button.x;
                 int y = game->event.button.y;
-
                 if (SDL_PointInRect(&(SDL_Point){x, y}, &rectSingle)) {
-                    
                     SDL_Delay(200);
-                    
                     loadSelectedTankTexture(game);
                     game->state = STATE_SINGLE_PLAYER;
                     inMenu = false;
-
                 } else if (SDL_PointInRect(&(SDL_Point){x, y}, &rectConnect)) {
                     enterServerIp(game);
                     bool tryConnect = true;
-
                     while (tryConnect) {
                         bool timedOut = false;
                         if (connectToServer(game, game->ipAddress, &timedOut)) {
@@ -283,7 +273,6 @@ void runMainMenu(Game* game) {
                             }
                         }
                     }
-
                 } else if (SDL_PointInRect(&(SDL_Point){x, y}, &rectSelectTank)) {
                     game->state = STATE_SELECT_TANK;
                     inMenu = false;
@@ -294,7 +283,6 @@ void runMainMenu(Game* game) {
                 }
             }
         }
-
         SDL_SetRenderDrawColor(game->pRenderer, 0, 0, 0, 255);
         SDL_RenderClear(game->pRenderer);
         SDL_RenderCopy(game->pRenderer, bg, NULL, NULL);
@@ -305,7 +293,6 @@ void runMainMenu(Game* game) {
         SDL_RenderPresent(game->pRenderer);
         SDL_Delay(16);
     }
-
     SDL_DestroyTexture(bg);
     SDL_DestroyTexture(btnSingle);
     SDL_DestroyTexture(btnConnect);
@@ -313,12 +300,12 @@ void runMainMenu(Game* game) {
     SDL_DestroyTexture(btnExit);
 }
 
+
 void runSinglePlayer(Game *game) {
     game->tank = createTank();
     setTankPosition(game->tank, 400, 300);  
     setTankAngle(game->tank, 0);
     setTankColorId(game->tank, game->tankColorId);
-
     SDL_Rect tankRect = getTankRect(game->tank);
     float shipX = tankRect.x;
     float shipY = tankRect.y;
@@ -329,23 +316,19 @@ void runSinglePlayer(Game *game) {
     bool up = false, down = false;
     int thickness = 20;
     int length = 80;
-
     game->topLeft = createWall(100, 100, thickness, length, WALL_TOP_LEFT);
     game->topRight = createWall(WINDOW_WIDTH - 100 - length, 100, thickness, length, WALL_TOP_RIGHT);
     game->bottomLeft = createWall(100, WINDOW_HEIGHT - 100 - length, thickness, length, WALL_BOTTOM_LEFT);
     game->bottomRight = createWall(WINDOW_WIDTH - 100 - length, WINDOW_HEIGHT - 100 - length, thickness, length, WALL_BOTTOM_RIGHT);
-
     while (!closeWindow) {
         update_timer(&game->timer);
         float dt = get_timer(&game->timer);
-
         while (SDL_PollEvent(&game->event)) {
             switch (game->event.type) {
                 case SDL_QUIT:
                     closeWindow = true;
                     game->state = STATE_EXIT;
                     break;
-
                 case SDL_KEYDOWN:
                     switch (game->event.key.keysym.scancode) {
                         case SDL_SCANCODE_SPACE:
@@ -407,10 +390,8 @@ void runSinglePlayer(Game *game) {
                     break;
             }
         }
-
         shipVelocityX = 0;
         shipVelocityY = 0;
-
         if (up && !down) {
             float radians = (angle - 90.0f) * M_PI / 180.0f;
             shipVelocityX = cos(radians) * SPEED;
@@ -421,11 +402,9 @@ void runSinglePlayer(Game *game) {
             shipVelocityX = -cos(radians) * SPEED;
             shipVelocityY = -sin(radians) * SPEED;
         }
-
         SDL_Rect futureTank = getTankRect(game->tank);
         futureTank.x = (int)(shipX + shipVelocityX * dt);
         futureTank.y = (int)(shipY + shipVelocityY * dt);
-
         if (!wallCheckCollision(game->topLeft, &futureTank) &&
             !wallCheckCollision(game->topRight, &futureTank) &&
             !wallCheckCollision(game->bottomLeft, &futureTank) &&
@@ -434,34 +413,26 @@ void runSinglePlayer(Game *game) {
             shipX += shipVelocityX * dt;
             shipY += shipVelocityY * dt;
         }
-
         if (shipX < 0) shipX = 0;
         if (shipY < 0) shipY = 0;
         if (shipX > WINDOW_WIDTH - tankRect.w) shipX = WINDOW_WIDTH - tankRect.w;
         if (shipY > WINDOW_HEIGHT - tankRect.h) shipY = WINDOW_HEIGHT - tankRect.h;
-
         if (shipX < 0) shipX = 0;
         if (shipY < 0) shipY = 0;
         if (shipX > WINDOW_WIDTH - tankRect.w) shipX = WINDOW_WIDTH - tankRect.w;
         if (shipY > WINDOW_HEIGHT - tankRect.h) shipY = WINDOW_HEIGHT - tankRect.h;
-
         setTankPosition(game->tank, shipX, shipY);
         setTankAngle(game->tank, angle);
-
         SDL_RenderClear(game->pRenderer);
         SDL_RenderCopy(game->pRenderer, game->pBackground, NULL, NULL);
-
         renderWall(game->pRenderer, game->topLeft);
         renderWall(game->pRenderer, game->topRight);
         renderWall(game->pRenderer, game->bottomLeft);
         renderWall(game->pRenderer, game->bottomRight);
-
-
         if (isTankAlive(game->tank)) {
             drawTank(game->pRenderer, game->tank, game->pTankpicture);
             renderTankHealth(game->pRenderer, 3);  
         }
-
         for (int i = 0; i < MAX_BULLETS; i++) {
             updateBullet(&game->bullets[i], dt);
             if (game->bullets[i].active) {
@@ -471,12 +442,10 @@ void runSinglePlayer(Game *game) {
                     (int)game->bullets[i].rect.w,
                     (int)game->bullets[i].rect.h
                 };
-
                 if (wallCheckCollision(game->topLeft, &bulletRect) ||
                     wallCheckCollision(game->bottomLeft, &bulletRect) ||
                     wallCheckCollision(game->topRight, &bulletRect) ||
                     wallCheckCollision(game->bottomRight, &bulletRect)) {
-
                     if (wallHitsVertical(game->topLeft, game->topRight, game->bottomLeft, game->bottomRight, &bulletRect)) {
                         game->bullets[i].velocityX *= -1;
                     }
@@ -485,10 +454,8 @@ void runSinglePlayer(Game *game) {
                     }
                 }
             }
-
             SDL_Rect tankRect = getTankRect(game->tank);
             SDL_FRect bulletRect = game->bullets[i].rect;
-
             if (game->bullets[i].active &&
                 game->bullets[i].ownerId != 0 &&
                 checkCollision(&tankRect, &bulletRect)) {
@@ -496,14 +463,13 @@ void runSinglePlayer(Game *game) {
             }
             renderBullet(game->pRenderer, &game->bullets[i]);
         }
-
         SDL_RenderPresent(game->pRenderer);
         SDL_Delay(1000 / 60);
     }
 }
 
 
-void run(Game *game){
+void run(Game *game) {
     Uint32 start = SDL_GetTicks();
     while (!game->tank && SDL_GetTicks() - start < 3000) {
         receiveGameState(game);
@@ -514,7 +480,6 @@ void run(Game *game){
         game->state = STATE_MENU;
         return;
     }
-
     bool closeWindow = false;
     bool up = false, down = false;
     int thickness = 20;
@@ -523,19 +488,22 @@ void run(Game *game){
     game->topRight = createWall(WINDOW_WIDTH - 100 - length, 100, thickness, length, WALL_TOP_RIGHT);
     game->bottomLeft = createWall(100, WINDOW_HEIGHT - 100 - length, thickness, length, WALL_BOTTOM_LEFT);
     game->bottomRight = createWall(WINDOW_WIDTH - 100 - length, WINDOW_HEIGHT - 100 - length, thickness, length, WALL_BOTTOM_RIGHT);
-
     while (!closeWindow) {
         update_timer(&game->timer);
         receiveGameState(game);
         float dt = get_timer(&game->timer);
-
+        if (game->matchOver) { 
+            showWinnerDialog(game, game->winningPlayerID);
+            game->state = STATE_MENU;
+            closeWindow = true;
+            break;
+        }
         while (SDL_PollEvent(&game->event)) {
             switch (game->event.type) {
                 case SDL_QUIT:
                     closeWindow = true;
                     game->state = STATE_EXIT;
                     break;
-
                 case SDL_KEYDOWN:
                     switch (game->event.key.keysym.scancode) {
                         case SDL_SCANCODE_W: up = true; break;
@@ -547,7 +515,6 @@ void run(Game *game){
                         default: break;
                     }
                     break;
-
                 case SDL_KEYUP:
                     switch (game->event.key.keysym.scancode) {
                         case SDL_SCANCODE_W: up = false; break;
@@ -557,18 +524,23 @@ void run(Game *game){
                     break;
             }
         }
-
         if (game->tank) {
+            if (getTankHealth(game->tank) <= 0) {
+                destroyTank();
+                game->tank = NULL;
+                showYouDiedDialog(game);
+                game->state = STATE_MENU;
+                closeWindow = true;
+                break;
+            }
             sendClientUpdate(game);
         }
-
         SDL_RenderClear(game->pRenderer);
         SDL_RenderCopy(game->pRenderer, game->pBackground, NULL, NULL);
         renderWall(game->pRenderer, game->topLeft);
         renderWall(game->pRenderer, game->topRight);
         renderWall(game->pRenderer, game->bottomLeft);
         renderWall(game->pRenderer, game->bottomRight);
-
         for (int i = 0; i < game->numOtherTanks; i++) {
             TankState *tank = &game->otherTanks[i];
             SDL_Rect rect = { tank->x, tank->y, 64, 64 };
@@ -581,7 +553,6 @@ void run(Game *game){
                 SDL_FLIP_NONE
             );
         }
-
         if (game->tank) {
             SDL_Rect rect = getTankRect(game->tank);
             SDL_RenderCopyEx(
@@ -594,21 +565,17 @@ void run(Game *game){
             );
             renderTankHealth(game->pRenderer, getTankHealth(game->tank));
         }
-
         for (int i = 0; i < MAX_PLAYERS * MAX_BULLETS_PER_PLAYER; i++) {
             if (!game->bullets[i].active)
                 continue;
-
             SDL_Rect tankRect = getTankRect(game->tank);
             SDL_FRect bulletRect = game->bullets[i].rect;
-
             SDL_Rect wallRect = {
                 (int)bulletRect.x,
                 (int)bulletRect.y,
                 (int)bulletRect.w,
                 (int)bulletRect.h
             };
-
             if (wallCheckCollision(game->topLeft, &wallRect) ||
                 wallCheckCollision(game->topRight, &wallRect) ||
                 wallCheckCollision(game->bottomLeft, &wallRect) ||
@@ -621,15 +588,12 @@ void run(Game *game){
                     game->bullets[i].velocityY *= -1;
                 }
             }
-
             if (game->bullets[i].ownerId != game->playerNumber && checkCollision(&tankRect, &bulletRect)) {
                 game->bullets[i].active = false;
             }
 
-
             renderBullet(game->pRenderer, &game->bullets[i]);
         }
-
         SDL_RenderPresent(game->pRenderer);
         SDL_Delay(16);
     }
@@ -651,13 +615,10 @@ void selectTank(Game* game) {
    bool swingRight = true;
    float swingSpeed = 30.0f;
    float maxSwingAngle = 5.0f;
-
    initiate_timer(&game->timer);
-
    while (selecting) {
        update_timer(&game->timer);
        float dt = get_timer(&game->timer);
-
        while (SDL_PollEvent(&game->event)) {
            if (game->event.type == SDL_QUIT) {
                game->state = STATE_EXIT;
@@ -684,7 +645,6 @@ void selectTank(Game* game) {
                }
            }
        }
-
        if (swingRight) {
            angle += swingSpeed * dt;
            if (angle >= maxSwingAngle) {
@@ -698,52 +658,44 @@ void selectTank(Game* game) {
                swingRight = true;
            }
        }
-
        SDL_RenderCopy(game->pRenderer, background, NULL, NULL);
-
        SDL_Color white = {255, 255, 255, 255};
        renderText(game->pRenderer, tankNames[currentSelection], (WINDOW_WIDTH / 2) - 100, 50, white);
-
        SDL_Color gray = {180, 180, 180, 255};
        renderText(game->pRenderer, "Press ENTER to choose", (WINDOW_WIDTH / 2) - 200, 100, gray);
-
        SDL_RenderCopyEx(game->pRenderer, tanks[currentSelection], NULL, &tankRect, angle, NULL, SDL_FLIP_NONE);
-
        SDL_RenderPresent(game->pRenderer);
        SDL_Delay(16);
    }
-
    for (int i = 0; i < MAXTANKS; i++) {
        SDL_DestroyTexture(tanks[i]);
    }
    SDL_DestroyTexture(background);
 }
 
+
 void loadSelectedTankTexture(Game* game) {
     game->tankTextures[0] = IMG_LoadTexture(game->pRenderer, "../lib/resources/tank.png");
     game->tankTextures[1] = IMG_LoadTexture(game->pRenderer, "../lib/resources/tank_lego.png");
     game->tankTextures[2] = IMG_LoadTexture(game->pRenderer, "../lib/resources/tank_light.png");
     game->tankTextures[3] = IMG_LoadTexture(game->pRenderer, "../lib/resources/tank_dark.png");
-
     int id = game->tankColorId;
     if (id < 0 || id >= MAXTANKS) id = 0;
     game->pTankpicture = game->tankTextures[id];
 }
+
 
 DialogResult showErrorDialog(Game* game, const char* title, const char* message) {
     if (!title || strlen(title) == 0 || !message || strlen(message) == 0) {
         SDL_Log("ErrorDialog: Title or message is empty");
         return DIALOG_RESULT_CANCEL;
     }
-
     TTF_Font* font = TTF_OpenFont("../lib/resources/Orbitron-Bold.ttf", 24);
     if (!font) {
         SDL_Log("TTF_OpenFont failed: %s", TTF_GetError());
         return DIALOG_RESULT_CANCEL;
     }
-
     SDL_Color textColor = {255, 255, 255, 255};
-
     SDL_Surface* titleSurface = TTF_RenderText_Solid(font, title, textColor);
     if (!titleSurface) {
         SDL_Log("Failed to render title text: %s", TTF_GetError());
@@ -765,7 +717,6 @@ DialogResult showErrorDialog(Game* game, const char* title, const char* message)
         TTF_CloseFont(font);
         return DIALOG_RESULT_CANCEL;
     }
-
     SDL_Surface* cancelSurface = TTF_RenderText_Solid(font, "Cancel", textColor);
     if (!cancelSurface) {
         SDL_Log("Failed to render cancel text: %s", TTF_GetError());
@@ -775,7 +726,6 @@ DialogResult showErrorDialog(Game* game, const char* title, const char* message)
         TTF_CloseFont(font);
         return DIALOG_RESULT_CANCEL;
     }
-
     SDL_Texture* titleTexture = SDL_CreateTextureFromSurface(game->pRenderer, titleSurface);
     SDL_Texture* messageTexture = SDL_CreateTextureFromSurface(game->pRenderer, messageSurface);
     SDL_Texture* tryAgainTexture = SDL_CreateTextureFromSurface(game->pRenderer, tryAgainSurface);
@@ -784,7 +734,6 @@ DialogResult showErrorDialog(Game* game, const char* title, const char* message)
     SDL_FreeSurface(messageSurface);
     SDL_FreeSurface(tryAgainSurface);
     SDL_FreeSurface(cancelSurface);
-
     if (!titleTexture || !messageTexture || !tryAgainTexture || !cancelTexture) {
         SDL_Log("Failed to create textures from surfaces: %s", SDL_GetError());
         if (titleTexture) SDL_DestroyTexture(titleTexture);
@@ -794,10 +743,8 @@ DialogResult showErrorDialog(Game* game, const char* title, const char* message)
         TTF_CloseFont(font);
         return DIALOG_RESULT_CANCEL;
     }
-
     int dialogW = 400, dialogH = 200;
     SDL_Rect dialogRect = {(WINDOW_WIDTH - dialogW) / 2, (WINDOW_HEIGHT - dialogH) / 2, dialogW, dialogH};
-
     int titleW, titleH, messageW, messageH;
     SDL_QueryTexture(titleTexture, NULL, NULL, &titleW, &titleH);
     SDL_QueryTexture(messageTexture, NULL, NULL, &messageW, &messageH);
@@ -806,16 +753,13 @@ DialogResult showErrorDialog(Game* game, const char* title, const char* message)
     int buttonW = 150, buttonH = 40;
     SDL_Rect tryAgainRect = {dialogRect.x + 40, dialogRect.y + 120, buttonW, buttonH};
     SDL_Rect cancelRect = {dialogRect.x + 220, dialogRect.y + 120, buttonW, buttonH}; 
-
     int tryAgainW, tryAgainH, cancelW, cancelH;
     SDL_QueryTexture(tryAgainTexture, NULL, NULL, &tryAgainW, &tryAgainH);
     SDL_QueryTexture(cancelTexture, NULL, NULL, &cancelW, &cancelH);
     SDL_Rect tryAgainTextRect = {tryAgainRect.x + (buttonW - tryAgainW) / 2, tryAgainRect.y + (buttonH - tryAgainH) / 2, tryAgainW, tryAgainH};
     SDL_Rect cancelTextRect = {cancelRect.x + (buttonW - cancelW) / 2, cancelRect.y + (buttonH - cancelH) / 2, cancelW, cancelH};
-
     bool inDialog = true;
     DialogResult result = DIALOG_RESULT_NONE;
-
     while (inDialog) {
         while (SDL_PollEvent(&game->event)) {
             if (game->event.type == SDL_QUIT) {
@@ -834,23 +778,18 @@ DialogResult showErrorDialog(Game* game, const char* title, const char* message)
                 }
             }
         }
-
         SDL_SetRenderDrawColor(game->pRenderer, 50, 50, 50, 255);
         SDL_RenderFillRect(game->pRenderer, &dialogRect);
-
         SDL_SetRenderDrawColor(game->pRenderer, 100, 100, 100, 255);
         SDL_RenderFillRect(game->pRenderer, &tryAgainRect);
         SDL_RenderFillRect(game->pRenderer, &cancelRect);
-
         SDL_SetRenderDrawColor(game->pRenderer, 255, 255, 255, 255);
         SDL_RenderDrawRect(game->pRenderer, &tryAgainRect);
         SDL_RenderDrawRect(game->pRenderer, &cancelRect);
-
         SDL_RenderCopy(game->pRenderer, titleTexture, NULL, &titleRect);
         SDL_RenderCopy(game->pRenderer, messageTexture, NULL, &messageRect);
         SDL_RenderCopy(game->pRenderer, tryAgainTexture, NULL, &tryAgainTextRect);
         SDL_RenderCopy(game->pRenderer, cancelTexture, NULL, &cancelTextRect);
-
         SDL_RenderPresent(game->pRenderer);
         SDL_Delay(16);
     }
@@ -862,6 +801,7 @@ DialogResult showErrorDialog(Game* game, const char* title, const char* message)
     return result;
 }
 
+
 bool connectToServer(Game* game, const char* ip, bool *timedOut) {
     IPaddress serverIP;
     if (SDLNet_ResolveHost(&serverIP, ip, SERVER_PORT) == -1) {
@@ -869,37 +809,29 @@ bool connectToServer(Game* game, const char* ip, bool *timedOut) {
         return false;
     }
     game->serverAddress = serverIP;
-
     game->pSocket = SDLNet_UDP_Open(0);
     if (!game->pSocket) {
         SDL_Log("SDLNet_UDP_Open: %s", SDLNet_GetError());
         return false;
     }
-
     game->pPacket = SDLNet_AllocPacket(sizeof(ServerData));
     if (!game->pPacket) {
         SDL_Log("SDLNet_AllocPacket: %s", SDLNet_GetError());
         return false;
     }
-
     ClientData request = { CONNECT };
     request.tankColorId = game->tankColorId;
-
     memcpy(game->pPacket->data, &request, sizeof(ClientData));
     game->pPacket->len = sizeof(ClientData);
     game->pPacket->address = serverIP;
-
     SDLNet_UDP_Send(game->pSocket, -1, game->pPacket);
-
     Uint32 start = SDL_GetTicks();
     *timedOut = false;
     bool gotConnectResponse = false;
-
     while (SDL_GetTicks() - start < 3000) {
         if (SDLNet_UDP_Recv(game->pSocket, game->pPacket)) {
             ServerCommand command;
             memcpy(&command, game->pPacket->data, sizeof(ServerCommand));
-
             if (!gotConnectResponse && game->pPacket->len == sizeof(ClientData)) {
                 ClientData response;
                 memcpy(&response, game->pPacket->data, sizeof(ClientData));
@@ -909,7 +841,6 @@ bool connectToServer(Game* game, const char* ip, bool *timedOut) {
                     gotConnectResponse = true;
                 }
             }
-
             if (command == START_MATCH && game->pPacket->len == sizeof(GameInitData)) {
                 GameInitData initData;
                 memcpy(&initData, game->pPacket->data, sizeof(GameInitData));
@@ -919,7 +850,6 @@ bool connectToServer(Game* game, const char* ip, bool *timedOut) {
         }
         SDL_Delay(10);
     }
-
     *timedOut = true;
     SDL_Log("ERROR: Timeout – inget START_MATCH mottaget");
     return false;
@@ -930,7 +860,6 @@ void receiveGameState(Game* game) {
     if (SDLNet_UDP_Recv(game->pSocket, game->pPacket)) {
         ServerCommand command;
         memcpy(&command, game->pPacket->data, sizeof(ServerCommand));
-
         if (command == GAME_STATE && game->pPacket->len == sizeof(ServerData)) {
             ServerData serverData;
             memcpy(&serverData, game->pPacket->data, sizeof(ServerData));
@@ -954,7 +883,6 @@ void receiveGameState(Game* game) {
                     game->otherTanks[game->numOtherTanks++] = serverData.tanks[i];
                 }
             }
-
             for (int i = 0; i < serverData.numBullets && i < MAX_PLAYERS * MAX_BULLETS_PER_PLAYER; i++) {
                 Bullet* b = &game->bullets[i];
                 b->rect.x = serverData.bullets[i].x;
@@ -966,11 +894,15 @@ void receiveGameState(Game* game) {
                 b->active = serverData.bullets[i].active;
                 b->ownerId = serverData.bullets[i].ownerId;
             }
-
             for (int i = serverData.numBullets; i < MAX_PLAYERS * MAX_BULLETS_PER_PLAYER; i++) {
                 game->bullets[i].active = false;
             }
-
+        } else if (command == MATCH_OVER && game->pPacket->len == sizeof(ServerData)) {
+            ServerData serverData;
+            memcpy(&serverData, game->pPacket->data, sizeof(ServerData));
+            game->matchOver = true;
+            game->winningPlayerID = serverData.winningPlayerID;
+            SDL_Log("Match over, winner is Player %d", game->winningPlayerID);
         } else {
             SDL_Log("WARN: Unknown command (command=%d, len=%d)", command, game->pPacket->len);
         }
@@ -978,24 +910,215 @@ void receiveGameState(Game* game) {
 }
 
 
+void showWinnerDialog(Game* game, int winnerID) {
+    TTF_Font* font = TTF_OpenFont("../lib/resources/Orbitron-Bold.ttf", 36); 
+    TTF_Font* smallFont = TTF_OpenFont("../lib/resources/Orbitron-Bold.ttf", 25); 
+    TTF_Font* okFont = TTF_OpenFont("../lib/resources/Orbitron-Bold.ttf", 22); 
+
+    if (!font || !smallFont || !okFont) {
+        SDL_Log("TTF_OpenFont failed: %s", TTF_GetError());
+        if (font) TTF_CloseFont(font);
+        if (smallFont) TTF_CloseFont(smallFont);
+        if (okFont) TTF_CloseFont(okFont);
+        return;
+    }
+    char message[32];
+    snprintf(message, sizeof(message), "Player %d Wins", winnerID);
+    SDL_Color textColor = {255, 255, 255, 255};
+    SDL_Surface* messageSurface = TTF_RenderText_Solid(smallFont, message, textColor);
+    if (!messageSurface) {
+        SDL_Log("Failed to render message text: %s", TTF_GetError());
+        TTF_CloseFont(font);
+        TTF_CloseFont(smallFont);
+        TTF_CloseFont(okFont);
+        return;
+    }
+    SDL_Texture* messageTexture = SDL_CreateTextureFromSurface(game->pRenderer, messageSurface);
+    SDL_FreeSurface(messageSurface);
+    if (!messageTexture) {
+        SDL_Log("Failed to create message texture: %s", SDL_GetError());
+        TTF_CloseFont(font);
+        TTF_CloseFont(smallFont);
+        TTF_CloseFont(okFont);
+        return;
+    }
+    SDL_Surface* gameOverSurface = TTF_RenderText_Solid(font, "GAME OVER", textColor);
+    if (!gameOverSurface) {
+        SDL_Log("Failed to render GAME OVER text: %s", TTF_GetError());
+        SDL_DestroyTexture(messageTexture);
+        TTF_CloseFont(font);
+        TTF_CloseFont(smallFont);
+        TTF_CloseFont(okFont);
+        return;
+    }
+    SDL_Texture* gameOverTexture = SDL_CreateTextureFromSurface(game->pRenderer, gameOverSurface);
+    SDL_FreeSurface(gameOverSurface);
+    if (!gameOverTexture) {
+        SDL_Log("Failed to create GAME OVER texture: %s", SDL_GetError());
+        SDL_DestroyTexture(messageTexture);
+        TTF_CloseFont(font);
+        TTF_CloseFont(smallFont);
+        TTF_CloseFont(okFont);
+        return;
+    }
+    SDL_Surface* okSurface = TTF_RenderText_Solid(okFont, "OK", textColor);
+    if (!okSurface) {
+        SDL_Log("Failed to render OK text: %s", TTF_GetError());
+        SDL_DestroyTexture(messageTexture);
+        SDL_DestroyTexture(gameOverTexture);
+        TTF_CloseFont(font);
+        TTF_CloseFont(smallFont);
+        TTF_CloseFont(okFont);
+        return;
+    }
+    SDL_Texture* okTexture = SDL_CreateTextureFromSurface(game->pRenderer, okSurface);
+    SDL_FreeSurface(okSurface);
+    if (!okTexture) {
+        SDL_Log("Failed to create OK texture: %s", SDL_GetError());
+        SDL_DestroyTexture(messageTexture);
+        SDL_DestroyTexture(gameOverTexture);
+        TTF_CloseFont(font);
+        TTF_CloseFont(smallFont);
+        TTF_CloseFont(okFont);
+        return;
+    }
+    int dialogW = 400, dialogH = 200; 
+    SDL_Rect dialogRect = {(WINDOW_WIDTH - dialogW) / 2, (WINDOW_HEIGHT - dialogH) / 2, dialogW, dialogH};
+    int gameOverW, gameOverH;
+    SDL_QueryTexture(gameOverTexture, NULL, NULL, &gameOverW, &gameOverH);
+    SDL_Rect gameOverRect = {dialogRect.x + (dialogW - gameOverW) / 2, dialogRect.y + 20, gameOverW, gameOverH};
+    int messageW, messageH;
+    SDL_QueryTexture(messageTexture, NULL, NULL, &messageW, &messageH);
+    SDL_Rect messageRect = {dialogRect.x + (dialogW - messageW) / 2, dialogRect.y + 20 + gameOverH + 10, messageW, messageH};
+    int buttonW = 60, buttonH = 30;
+    SDL_Rect okButtonRect = {dialogRect.x + (dialogW - buttonW) / 2, dialogRect.y + dialogH - buttonH - 20, buttonW, buttonH};
+    int okW, okH;
+    SDL_QueryTexture(okTexture, NULL, NULL, &okW, &okH);
+    SDL_Rect okTextRect = {okButtonRect.x + (buttonW - okW) / 2, okButtonRect.y + (buttonH - okH) / 2, okW, okH};
+    Uint32 startTime = SDL_GetTicks();
+    bool showing = true;
+    while (showing) {
+        while (SDL_PollEvent(&game->event)) {
+            if (game->event.type == SDL_QUIT) {
+                game->state = STATE_EXIT;
+                showing = false;
+            } else if (game->event.type == SDL_MOUSEBUTTONDOWN) {
+                int x = game->event.button.x;
+                int y = game->event.button.y;
+                if (SDL_PointInRect(&(SDL_Point){x, y}, &okButtonRect)) {
+                    showing = false;
+                }
+            }
+        }
+        SDL_SetRenderDrawColor(game->pRenderer, 50, 50, 50, 255);
+        SDL_RenderFillRect(game->pRenderer, &dialogRect);
+        SDL_SetRenderDrawColor(game->pRenderer, 255, 255, 255, 255);
+        SDL_RenderDrawRect(game->pRenderer, &dialogRect);
+        SDL_RenderCopy(game->pRenderer, gameOverTexture, NULL, &gameOverRect);
+        SDL_RenderCopy(game->pRenderer, messageTexture, NULL, &messageRect);
+        SDL_SetRenderDrawColor(game->pRenderer, 100, 100, 100, 255);
+        SDL_RenderFillRect(game->pRenderer, &okButtonRect);
+        SDL_SetRenderDrawColor(game->pRenderer, 255, 255, 255, 255);
+        SDL_RenderDrawRect(game->pRenderer, &okButtonRect);
+        SDL_RenderCopy(game->pRenderer, okTexture, NULL, &okTextRect); 
+        SDL_RenderPresent(game->pRenderer);
+        SDL_Delay(16);
+    }
+    SDL_DestroyTexture(messageTexture);
+    SDL_DestroyTexture(gameOverTexture);
+    SDL_DestroyTexture(okTexture);
+    TTF_CloseFont(font);
+    TTF_CloseFont(smallFont);
+    TTF_CloseFont(okFont);
+}
+
+void showYouDiedDialog(Game* game) {
+    TTF_Font* font = TTF_OpenFont("../lib/resources/Orbitron-Bold.ttf", 36);
+    TTF_Font* okFont = TTF_OpenFont("../lib/resources/Orbitron-Bold.ttf", 22);
+
+    if (!font || !okFont) {
+        SDL_Log("TTF_OpenFont failed: %s", TTF_GetError());
+        if (font) TTF_CloseFont(font);
+        if (okFont) TTF_CloseFont(okFont);
+        return;
+    }
+
+    SDL_Color textColor = {255, 255, 255, 255};
+
+    SDL_Surface* diedSurface = TTF_RenderText_Solid(font, "YOU DIED", textColor);
+    SDL_Texture* diedTexture = SDL_CreateTextureFromSurface(game->pRenderer, diedSurface);
+    SDL_FreeSurface(diedSurface);
+
+    SDL_Surface* okSurface = TTF_RenderText_Solid(okFont, "OK", textColor);
+    SDL_Texture* okTexture = SDL_CreateTextureFromSurface(game->pRenderer, okSurface);
+    SDL_FreeSurface(okSurface);
+
+    int dialogW = 400, dialogH = 200;
+    SDL_Rect dialogRect = { (WINDOW_WIDTH - dialogW) / 2, (WINDOW_HEIGHT - dialogH) / 2, dialogW, dialogH };
+
+    int diedW, diedH;
+    SDL_QueryTexture(diedTexture, NULL, NULL, &diedW, &diedH);
+    SDL_Rect diedRect = { dialogRect.x + (dialogW - diedW) / 2, dialogRect.y + 50, diedW, diedH };
+
+    int buttonW = 60, buttonH = 30;
+    SDL_Rect okButtonRect = { dialogRect.x + (dialogW - buttonW) / 2, dialogRect.y + dialogH - buttonH - 20, buttonW, buttonH };
+
+    int okW, okH;
+    SDL_QueryTexture(okTexture, NULL, NULL, &okW, &okH);
+    SDL_Rect okTextRect = { okButtonRect.x + (buttonW - okW) / 2, okButtonRect.y + (buttonH - okH) / 2, okW, okH };
+
+    bool showing = true;
+    while (showing) {
+        while (SDL_PollEvent(&game->event)) {
+            if (game->event.type == SDL_QUIT) {
+                game->state = STATE_EXIT;
+                showing = false;
+            } else if (game->event.type == SDL_MOUSEBUTTONDOWN) {
+                int x = game->event.button.x;
+                int y = game->event.button.y;
+                if (SDL_PointInRect(&(SDL_Point){x, y}, &okButtonRect)) {
+                    showing = false;
+                }
+            }
+        }
+
+        SDL_SetRenderDrawColor(game->pRenderer, 50, 50, 50, 255);
+        SDL_RenderFillRect(game->pRenderer, &dialogRect);
+        SDL_SetRenderDrawColor(game->pRenderer, 255, 255, 255, 255);
+        SDL_RenderDrawRect(game->pRenderer, &dialogRect);
+
+        SDL_RenderCopy(game->pRenderer, diedTexture, NULL, &diedRect);
+
+        SDL_SetRenderDrawColor(game->pRenderer, 100, 100, 100, 255);
+        SDL_RenderFillRect(game->pRenderer, &okButtonRect);
+        SDL_SetRenderDrawColor(game->pRenderer, 255, 255, 255, 255);
+        SDL_RenderDrawRect(game->pRenderer, &okButtonRect);
+        SDL_RenderCopy(game->pRenderer, okTexture, NULL, &okTextRect);
+
+        SDL_RenderPresent(game->pRenderer);
+        SDL_Delay(16);
+    }
+
+    SDL_DestroyTexture(diedTexture);
+    SDL_DestroyTexture(okTexture);
+    TTF_CloseFont(font);
+    TTF_CloseFont(okFont);
+}
+
+
 void sendClientUpdate(Game* game) {
     if (!game || !game->tank || !game->pSocket || !game->pPacket) return;
-
     ClientData data;
     memset(&data, 0, sizeof(ClientData));
-
     data.command = UPDATE;
     data.playerNumber = game->playerNumber;
     data.tankColorId = getTankColorId(game->tank);
     data.angle = getTankAngle(game->tank);
-
     const Uint8* keys = SDL_GetKeyboardState(NULL);
-
     data.up    = keys[SDL_SCANCODE_W] || keys[SDL_SCANCODE_UP];
     data.down  = keys[SDL_SCANCODE_S] || keys[SDL_SCANCODE_DOWN];
     data.left  = keys[SDL_SCANCODE_A] || keys[SDL_SCANCODE_LEFT];
     data.right = keys[SDL_SCANCODE_D] || keys[SDL_SCANCODE_RIGHT];
-
     Uint32 now = SDL_GetTicks();
     if (keys[SDL_SCANCODE_SPACE] && (now - game->lastshottime > 700)) {
         data.shooting = true;
@@ -1003,12 +1126,10 @@ void sendClientUpdate(Game* game) {
     } else {
         data.shooting = false;
     }
-
     memcpy(game->pPacket->data, &data, sizeof(ClientData));
     game->pPacket->len = sizeof(ClientData);
     SDLNet_UDP_Send(game->pSocket, -1, game->pPacket);
 }
-
 
 
 void closeGame(Game *game)
@@ -1017,11 +1138,9 @@ void closeGame(Game *game)
         destroyTankInstance(game->tank);
         game->tank = NULL;
     }
-
     destroyTank();
     destroyBulletTexture();
     destroyHeartTexture();
-
     if (game->topLeft) {
         destroyWall(game->topLeft);
         game->topLeft = NULL;
@@ -1038,39 +1157,32 @@ void closeGame(Game *game)
         destroyWall(game->bottomRight);
         game->bottomRight = NULL;
     }
-
     for (int i = 0; i < MAXTANKS; i++) {
         if (game->tankTextures[i]) {
             SDL_DestroyTexture(game->tankTextures[i]);
             game->tankTextures[i] = NULL;
         }
     }
-
     if (game->pTankpicture != NULL) {
         SDL_DestroyTexture(game->pTankpicture);
         game->pTankpicture = NULL;
     }
-
     if (game->pBackground != NULL) {
         SDL_DestroyTexture(game->pBackground);
         game->pBackground = NULL;
     }
-
     if (game->pRenderer != NULL) {
         SDL_DestroyRenderer(game->pRenderer);
         game->pRenderer = NULL;
     }
-
     if (game->pWindow != NULL) {
         SDL_DestroyWindow(game->pWindow);
         game->pWindow = NULL;
     }
-
     if (game->pPacket != NULL) {
         SDLNet_FreePacket(game->pPacket);
         game->pPacket = NULL;
     }
-
     if (game->pSocket != NULL) {
         SDLNet_UDP_Close(game->pSocket);
         game->pSocket = NULL;
