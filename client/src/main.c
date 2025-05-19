@@ -85,6 +85,7 @@ void selectTank(Game* game);
 void loadSelectedTankTexture(Game* game);
 void runSinglePlayer(Game *game);
 void closeGame(Game* game);
+void showYouDiedDialog(Game* game);
 bool connectToServer(Game* game, const char* ip, bool *timedOut);
 void receiveGameState(Game* game);
 void sendClientUpdate(Game* game);
@@ -523,6 +524,14 @@ void run(Game *game) {
             }
         }
         if (game->tank) {
+            if (getTankHealth(game->tank) <= 0) {
+                destroyTank();
+                game->tank = NULL;
+                showYouDiedDialog(game);
+                game->state = STATE_MENU;
+                closeWindow = true;
+                break;
+            }
             sendClientUpdate(game);
         }
         SDL_RenderClear(game->pRenderer);
@@ -1019,6 +1028,79 @@ void showWinnerDialog(Game* game, int winnerID) {
     SDL_DestroyTexture(okTexture);
     TTF_CloseFont(font);
     TTF_CloseFont(smallFont);
+    TTF_CloseFont(okFont);
+}
+
+void showYouDiedDialog(Game* game) {
+    TTF_Font* font = TTF_OpenFont("../lib/resources/Orbitron-Bold.ttf", 36);
+    TTF_Font* okFont = TTF_OpenFont("../lib/resources/Orbitron-Bold.ttf", 22);
+
+    if (!font || !okFont) {
+        SDL_Log("TTF_OpenFont failed: %s", TTF_GetError());
+        if (font) TTF_CloseFont(font);
+        if (okFont) TTF_CloseFont(okFont);
+        return;
+    }
+
+    SDL_Color textColor = {255, 255, 255, 255};
+
+    SDL_Surface* diedSurface = TTF_RenderText_Solid(font, "YOU DIED", textColor);
+    SDL_Texture* diedTexture = SDL_CreateTextureFromSurface(game->pRenderer, diedSurface);
+    SDL_FreeSurface(diedSurface);
+
+    SDL_Surface* okSurface = TTF_RenderText_Solid(okFont, "OK", textColor);
+    SDL_Texture* okTexture = SDL_CreateTextureFromSurface(game->pRenderer, okSurface);
+    SDL_FreeSurface(okSurface);
+
+    int dialogW = 400, dialogH = 200;
+    SDL_Rect dialogRect = { (WINDOW_WIDTH - dialogW) / 2, (WINDOW_HEIGHT - dialogH) / 2, dialogW, dialogH };
+
+    int diedW, diedH;
+    SDL_QueryTexture(diedTexture, NULL, NULL, &diedW, &diedH);
+    SDL_Rect diedRect = { dialogRect.x + (dialogW - diedW) / 2, dialogRect.y + 50, diedW, diedH };
+
+    int buttonW = 60, buttonH = 30;
+    SDL_Rect okButtonRect = { dialogRect.x + (dialogW - buttonW) / 2, dialogRect.y + dialogH - buttonH - 20, buttonW, buttonH };
+
+    int okW, okH;
+    SDL_QueryTexture(okTexture, NULL, NULL, &okW, &okH);
+    SDL_Rect okTextRect = { okButtonRect.x + (buttonW - okW) / 2, okButtonRect.y + (buttonH - okH) / 2, okW, okH };
+
+    bool showing = true;
+    while (showing) {
+        while (SDL_PollEvent(&game->event)) {
+            if (game->event.type == SDL_QUIT) {
+                game->state = STATE_EXIT;
+                showing = false;
+            } else if (game->event.type == SDL_MOUSEBUTTONDOWN) {
+                int x = game->event.button.x;
+                int y = game->event.button.y;
+                if (SDL_PointInRect(&(SDL_Point){x, y}, &okButtonRect)) {
+                    showing = false;
+                }
+            }
+        }
+
+        SDL_SetRenderDrawColor(game->pRenderer, 50, 50, 50, 255);
+        SDL_RenderFillRect(game->pRenderer, &dialogRect);
+        SDL_SetRenderDrawColor(game->pRenderer, 255, 255, 255, 255);
+        SDL_RenderDrawRect(game->pRenderer, &dialogRect);
+
+        SDL_RenderCopy(game->pRenderer, diedTexture, NULL, &diedRect);
+
+        SDL_SetRenderDrawColor(game->pRenderer, 100, 100, 100, 255);
+        SDL_RenderFillRect(game->pRenderer, &okButtonRect);
+        SDL_SetRenderDrawColor(game->pRenderer, 255, 255, 255, 255);
+        SDL_RenderDrawRect(game->pRenderer, &okButtonRect);
+        SDL_RenderCopy(game->pRenderer, okTexture, NULL, &okTextRect);
+
+        SDL_RenderPresent(game->pRenderer);
+        SDL_Delay(16);
+    }
+
+    SDL_DestroyTexture(diedTexture);
+    SDL_DestroyTexture(okTexture);
+    TTF_CloseFont(font);
     TTF_CloseFont(okFont);
 }
 

@@ -272,6 +272,11 @@ void checkPlayerHeartbeats() {
 void updateTanks(float dt) {
     for (int i = 0; i < MAX_PLAYERS; i++) {
         if (!connectedPlayers[i].active || !tanks[i]) continue;
+        if (getTankHealth(tanks[i]) <= 0) {
+            connectedPlayers[i].active = false;
+            playerStatus[i].active = false;
+            continue;
+    }
         float angle = playerStatus[i].angle;
         if (playerStatus[i].left && !playerStatus[i].right) {
             angle -= 10.0f;
