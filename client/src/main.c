@@ -887,8 +887,8 @@ void receiveGameState(Game* game) {
                 Bullet* b = &game->bullets[i];
                 b->rect.x = serverData.bullets[i].x;
                 b->rect.y = serverData.bullets[i].y;
-                b->rect.w = 8;
-                b->rect.h = 8;
+                b->rect.w = 15;
+                b->rect.h = 15;
                 b->velocityX = serverData.bullets[i].vx;
                 b->velocityY = serverData.bullets[i].vy;
                 b->active = serverData.bullets[i].active;

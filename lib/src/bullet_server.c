@@ -13,8 +13,8 @@ void initServerBullet(ServerBullet* bullet) {
 }
 
 void fireServerBullet(ServerBullet* bullet, float startX, float startY, float angle, int ownerId) {
-    bullet->w = 8;
-    bullet->h = 8;
+    bullet->w = 15;
+    bullet->h = 15;
 
     bullet->x = startX - bullet->w / 2;
     bullet->y = startY - bullet->h / 2;

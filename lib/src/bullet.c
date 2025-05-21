@@ -29,8 +29,8 @@ void initBullet(Bullet* bullet)
 {
     bullet->rect.x = 0;
     bullet->rect.y = 0;
-    bullet->rect.w = 8;
-    bullet->rect.h = 8;
+    bullet->rect.w = 15;
+    bullet->rect.h = 15;
     bullet->velocityX = 0;
     bullet->velocityY = 0;
     bullet->active = false;
