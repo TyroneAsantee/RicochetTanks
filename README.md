@@ -34,9 +34,11 @@ Up to four players can control a tank on an arena, choose colors, and shoot proj
 
 ## How to Run
 - START SERVER FIRST
-- cd ../server
-- make
-- ./server
+```bash
+cd ../server
+make
+./server
+```
 - THEN GAME
 ```bash
 git clone https://github.com/TyroneAsantee/RicochetTanks.git
